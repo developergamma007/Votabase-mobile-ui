@@ -47,6 +47,24 @@
       <key>NSThirdPartyExceptionRequiresForwardSecrecy</key>
       <false/>
     </dict>
+    <key>localhost</key>
+    <dict>
+      <key>NSIncludesSubdomains</key>
+      <true/>
+      <key>NSExceptionAllowsInsecureHTTPLoads</key>
+      <true/>
+      <key>NSThirdPartyExceptionRequiresForwardSecrecy</key>
+      <false/>
+    </dict>
+    <key>127.0.0.1</key>
+    <dict>
+      <key>NSIncludesSubdomains</key>
+      <true/>
+      <key>NSExceptionAllowsInsecureHTTPLoads</key>
+      <true/>
+      <key>NSThirdPartyExceptionRequiresForwardSecrecy</key>
+      <false/>
+    </dict>
   </dict>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>

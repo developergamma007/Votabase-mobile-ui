@@ -1,14 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
 import React, { useEffect } from "react";
 import { View, Text, ActivityIndicator } from "react-native";
 import { CRUDAPI } from "../../apis/Api";
 import { bgColors } from "../../constants/colors";
 
 const LoadData = ({ navigation }) => {
+  const LITE_CACHE_KEY = "boothSnapshotLite";
+
   const saveData = async (data) => {
     try {
-      await AsyncStorage.setItem('assemblyData', JSON.stringify(data));
+      await AsyncStorage.setItem(LITE_CACHE_KEY, JSON.stringify(data));
       return true;
     } catch (error) {
       console.error('Error saving data', error);
@@ -18,16 +19,17 @@ const LoadData = ({ navigation }) => {
 
   const loadAssembly = async () => {
     try {
-      const res = await CRUDAPI.loadData();
+      const res = await CRUDAPI.loadDataLite();
       const snapshotResult = res?.data?.result;
-      console.log(snapshotResult)
       console.log('Re-loaded data from server')
       if (!snapshotResult) throw new Error('Snapshot data not found');
 
       if (typeof snapshotResult === "string") {
-        // Backward compatibility: older backend may still send a URL.
-        const jsonResponse = await axios.get(snapshotResult);
-        await saveData(jsonResponse.data);
+        // Link-based contract for large snapshots.
+        const resp = await fetch(snapshotResult);
+        if (!resp.ok) throw new Error(`Snapshot link fetch failed: ${resp.status}`);
+        const snapshotJson = await resp.json();
+        await saveData(snapshotJson);
       } else {
         // New backend contract: snapshot object is returned directly.
         await saveData(snapshotResult);

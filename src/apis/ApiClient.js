@@ -5,7 +5,8 @@ import { Platform } from 'react-native';
 const PROD_BASE_URL = 'http://api.iswot.in:8081';
 const DEV_HOST = Platform.OS === 'android' ? '10.0.2.2' : '127.0.0.1';
 const DEV_BASE_URL = `http://${DEV_HOST}:8082`;
-const BASE_URL = __DEV__ ? DEV_BASE_URL : PROD_BASE_URL;
+const BASE_URL = DEV_BASE_URL;
+console.log(`[API_BASE] ${BASE_URL} platform=${Platform.OS} __DEV__=${__DEV__}`);
 
 // Create Axios instance
 const apiClient = axios.create({
@@ -13,6 +14,8 @@ const apiClient = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  maxContentLength: Infinity,
+  maxBodyLength: Infinity,
 });
 
 // Interceptor — runs before every request
@@ -23,6 +26,7 @@ apiClient.interceptors.request.use(
       config.headers['Authorization'] = `Bearer ${token}`;
     }
      const fullUrl = `${config.baseURL}${config.url}`;
+     console.log('API Request:', fullUrl);
     
     return config;
   },

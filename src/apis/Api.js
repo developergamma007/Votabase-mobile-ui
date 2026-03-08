@@ -20,6 +20,26 @@ export const CRUDAPI = {
         }
     },
 
+    loadDataLite: async () => {
+        try {
+            const response = await apiClient.get('/votebase/v1/api/voters/snapshot?assemblyCode=000000000175&includeVoters=false');
+            return response.data;
+        } catch (error) {
+            console.log('Load lite data API Error:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    fetchBoothVoters: async (boothId) => {
+        try {
+            const response = await apiClient.get(`/votebase/v1/api/voters/by-booth?boothId=${boothId}`);
+            return response.data;
+        } catch (error) {
+            console.log('Fetch booth voters API Error:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
     updateVoter: async (voterId, jsonReq) => {
         try {
             const response = await apiClient.put(`/votebase/v1/api/voters/${voterId}`, jsonReq);
