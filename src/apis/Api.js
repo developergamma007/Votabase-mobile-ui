@@ -1,5 +1,60 @@
 import apiClient from './ApiClient';
 
+const PUBLIC_VOTER_UPDATE_FIELDS = new Set([
+    'mobile',
+    'dob',
+    'community',
+    'caste',
+    'motherTongue',
+    'education',
+    'residenceType',
+    'ownership',
+    'voterPoints',
+    'govtSchemeTracking',
+    'engagementPotential',
+    'ifShifted',
+    'status',
+    'civicIssue',
+    'natureOfVoter',
+    'notes',
+    'presentAddress',
+    'newWard',
+    'newBoothNo',
+    'newSerialNo',
+    'notAvailableReason',
+    'latitude',
+    'longitude',
+    'gender',
+    'age',
+    'houseNoEn',
+    'houseNoLocal',
+    'firstMiddleNameEn',
+    'lastNameEn',
+    'firstMiddleNameLocal',
+    'lastNameLocal',
+    'addressEn',
+    'addressLocal',
+    'relationFirstMiddleNameEn',
+    'relationLastNameEn',
+    'relationFirstMiddleNameLocal',
+    'relationLastNameLocal',
+    'relationType',
+    'team',
+]);
+
+const buildPublicVoterUpdatePayload = (jsonReq = {}, options = {}) => {
+    const updateRequest = Object.entries(jsonReq?.updateRequest || {}).reduce((acc, [key, value]) => {
+        if (PUBLIC_VOTER_UPDATE_FIELDS.has(key)) acc[key] = value;
+        return acc;
+    }, {});
+
+    return {
+        wardCode: options.wardCode || undefined,
+        boothNo: options.boothNo != null ? String(options.boothNo) : undefined,
+        updateRequest,
+    };
+};
+
 export const CRUDAPI = {
     loginApi: async (data) => {
         try {
@@ -40,9 +95,36 @@ export const CRUDAPI = {
         }
     },
 
-    updateVoter: async (voterId, jsonReq) => {
+    searchVoters: async (params = {}) => {
         try {
-            const response = await apiClient.put(`/votebase/v1/api/voters/${voterId}`, jsonReq);
+            const query = {
+                assemblyCode: params.assemblyCode || '000000000175',
+                page: params.page ?? 0,
+                size: params.size ?? 500,
+            };
+
+            if (params.searchQuery?.trim()) query.searchQuery = params.searchQuery.trim();
+            if (params.wardId !== undefined && params.wardId !== null && String(params.wardId).trim() !== '') {
+                query.wardId = Number(params.wardId);
+            }
+            if (params.boothNumber?.trim()) query.boothNumber = params.boothNumber.trim();
+            if (params.mobileNumber?.trim()) query.mobileNumber = params.mobileNumber.trim();
+            if (params.epicId?.trim()) query.epicId = params.epicId.trim();
+            if (params.relationName?.trim()) query.relationName = params.relationName.trim();
+            if (params.houseNumber?.trim()) query.houseNumber = params.houseNumber.trim();
+
+            const response = await apiClient.get('/votebase/v1/api/voter-search', { params: query });
+            return response.data;
+        } catch (error) {
+            console.log('Search voters API Error:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    updateVoter: async (epicNo, jsonReq, options = {}) => {
+        try {
+            const payload = buildPublicVoterUpdatePayload(jsonReq, options);
+            const response = await apiClient.put(`/votebase/v1/api/voters/by-epic/${encodeURIComponent(epicNo)}`, payload);
             return response.data;
         } catch (error) {
             console.log('Update Voter API Error:', error.response?.data || error.message);

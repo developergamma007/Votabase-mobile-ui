@@ -43,20 +43,23 @@ export default function Logs() {
     }
     for (const item of pendingItems) {
       if (item) {
-        const voterId = item?.voter?.voterId;
+        const epicNo = item?.voter?.epicNo;
         try {
           const transformedReq = {
             updateLocationLat: item?.voter?.location && item?.voter?.location.latitude || 0,
             updateLocationLng: item?.voter?.location && item?.voter?.location.longitude || 0,
             updateRequest: item.voter
           };
-          const res = await CRUDAPI.updateVoter(voterId, transformedReq);
+          const res = await CRUDAPI.updateVoter(epicNo, transformedReq, {
+            boothNo: item?.voter?.boothNo || item?.voter?.boothInfo?.boothNo,
+            wardCode: item?.voter?.wardCode || item?.booth?.wardCode || item?.voter?.boothInfo?.wardCode,
+          });
           if(res.success){
             await updateLogStatus(item.id, "server");
             loadLogs()
           }
         } catch (error) {
-          console.log(`Failed to update voter ${voterId}:`, error);
+          console.log(`Failed to update voter ${epicNo}:`, error);
         }
       }
     }

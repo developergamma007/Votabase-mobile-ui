@@ -945,7 +945,10 @@ Bengaluru Central Parliamentary Constituency
             }
         };
         try {
-            const res = await CRUDAPI.updateVoter(voter.voterId, transformedReq);
+            const res = await CRUDAPI.updateVoter(voter.epicNo, transformedReq, {
+                boothNo: voter?.boothNo || voter?.boothInfo?.boothNo,
+                wardCode: voter?.wardCode || voter?.boothInfo?.wardCode,
+            });
             if (res.success) {
                 await updateLogStatus(logId, "server");
                 showBanner("success", "Voter Info updated successfully!")
@@ -1231,4 +1234,3 @@ Bengaluru Central Parliamentary Constituency
         </ScrollView>
     );
 }
-
