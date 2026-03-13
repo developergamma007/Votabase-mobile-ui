@@ -234,6 +234,48 @@ export const CRUDAPI = {
             throw error;
         }
     },
+    fetchAssignments: async (type) => {
+        try {
+            const response = await apiClient.get(`/votebase/v1/api/assignments?type=${encodeURIComponent(type)}`);
+            return response.data;
+        } catch (error) {
+            console.log('Error while fetching assignments:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+    fetchVolunteerDropdown: async (level, parentId) => {
+        try {
+            const query = parentId ? `?level=${encodeURIComponent(level)}&parentId=${encodeURIComponent(parentId)}` : `?level=${encodeURIComponent(level)}`;
+            const response = await apiClient.get(`/votebase/v1/api/volunteers/dropdown${query}`);
+            return response.data;
+        } catch (error) {
+            console.log('Error while fetching volunteer dropdown:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+    fetchWards: async (assemblyId) => {
+        try {
+            const query = assemblyId ? `?assemblyId=${encodeURIComponent(assemblyId)}` : '';
+            const response = await apiClient.get(`/votebase/v1/api/wards${query}`);
+            return response.data;
+        } catch (error) {
+            console.log('Error while fetching wards:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+    fetchBooths: async (assemblyCode, wardId) => {
+        try {
+            const params = new URLSearchParams();
+            if (assemblyCode) params.set('assemblyCode', String(assemblyCode));
+            if (wardId) params.set('wardId', String(wardId));
+            const qs = params.toString();
+            const response = await apiClient.get(`/votebase/v1/api/booths${qs ? `?${qs}` : ''}`);
+            return response.data;
+        } catch (error) {
+            console.log('Error while fetching booths:', error.response?.data || error.message);
+            throw error;
+        }
+    },
 
     addVolunteer: async (jsonReq) => {
         try {

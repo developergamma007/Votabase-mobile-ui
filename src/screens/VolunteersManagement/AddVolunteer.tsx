@@ -26,14 +26,19 @@ export default function AddVolunteer() {
     phone: "",
     profilePicUrl: "",
     workingLevel: "ASSEMBLY",   // assignmentType
-    assignTo: null,             // assignmentId
+    assemblyId: null,
+    wardId: null,
+    boothId: null,
   });
 
   // 2. State for controlling DropDownPicker visibility
   const [openWorkingLevel, setOpenWorkingLevel] = useState(false);
-  const [openAssignTo, setOpenAssignTo] = useState(false);
-  const [boothsList, setBoothsList] = useState([]);
-  const [assignToItems, setAssignToItems] = useState([]);
+  const [openAssembly, setOpenAssembly] = useState(false);
+  const [openWard, setOpenWard] = useState(false);
+  const [openBooth, setOpenBooth] = useState(false);
+  const [assemblies, setAssemblies] = useState([]);
+  const [wards, setWards] = useState([]);
+  const [booths, setBooths] = useState([]);
 
   // 3. Dropdown items (data) (Unchanged)
   const workingLevelItems = [
@@ -50,41 +55,154 @@ export default function AddVolunteer() {
     }));
   };
 
-  const fetchBoothIds = async () => {
+  const fetchAssemblies = async () => {
     try {
-      const res = await CRUDAPI.fetchBoothIds();
-      setBoothsList(res);
-    } catch {
-      //
-    }
-  }
-
-  useEffect(() => {
-    fetchBoothIds()
-  }, [])
-
-  useEffect(() => {
-    if (boothsList?.data?.result) {
-      const formatted = boothsList.data.result?.filter((item) => item.label != "").map(item => ({
-        label: item.nameEn || `Booth ${item.id}`,
+      const res = await CRUDAPI.fetchVolunteerDropdown("ASSEMBLY");
+      const formatted = (res || []).map((item) => ({
+        label: item.name || `Assembly ${item.id}`,
         value: item.id,
       }));
-      setAssignToItems(formatted);
+      setAssemblies(formatted);
+    } catch {
+      setAssemblies([]);
     }
-  }, [boothsList]);  // runs only when API response changes
+  };
+
+  const fetchWards = async (assemblyId) => {
+    try {
+      if (!assemblyId) {
+        setWards([]);
+        return;
+      }
+      const res = await CRUDAPI.fetchWards(assemblyId);
+      const formatted = (res || []).map((item) => ({
+        label: item.wardNameEn || `Ward ${item.wardId}`,
+        value: item.wardId,
+      }));
+      setWards(formatted);
+    } catch {
+      setWards([]);
+    }
+  };
+
+  const fetchWardsAll = async () => {
+    try {
+      const res = await CRUDAPI.fetchWards();
+      const formatted = (res || []).map((item) => ({
+        label: item.wardNameEn || `Ward ${item.wardId}`,
+        value: item.wardId,
+      }));
+      setWards(formatted);
+    } catch {
+      setWards([]);
+    }
+  };
+
+  const fetchBooths = async (wardId, includeAll = false) => {
+    try {
+      if (!wardId) {
+        setBooths(includeAll ? [{ label: "All Booths", value: "ALL" }] : []);
+        return;
+      }
+      const res = await CRUDAPI.fetchBooths(null, wardId);
+      const formatted = (res || []).map((item) => ({
+        label: item.pollingStationAdrEn || `Booth ${item.boothId}`,
+        value: item.boothId,
+      }));
+      const withAll = includeAll ? [{ label: "All Booths", value: "ALL" }, ...formatted] : formatted;
+      setBooths(withAll);
+    } catch {
+      setBooths(includeAll ? [{ label: "All Booths", value: "ALL" }] : []);
+    }
+  };
+
+  const fetchBoothsAll = async () => {
+    try {
+      const res = await CRUDAPI.fetchBooths();
+      const formatted = (res || []).map((item) => ({
+        label: item.pollingStationAdrEn || `Booth ${item.boothId}`,
+        value: item.boothId,
+      }));
+      setBooths(formatted);
+    } catch {
+      setBooths([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchAssemblies();
+  }, []);
+
+  useEffect(() => {
+    // Reset dependent selections when working level changes
+    setFormData((prev) => ({
+      ...prev,
+      assemblyId: null,
+      wardId: null,
+      boothId: null,
+    }));
+    setWards([]);
+    setBooths([]);
+
+    if (formData.workingLevel === "WARD") {
+      fetchWardsAll();
+    }
+    if (formData.workingLevel === "BOOTH") {
+      fetchBoothsAll();
+    }
+  }, [formData.workingLevel]);
+
+  useEffect(() => {
+    if (formData.workingLevel === "ASSEMBLY") {
+      setFormData((prev) => ({ ...prev, wardId: null, boothId: null }));
+      fetchWards(formData.assemblyId);
+    }
+  }, [formData.workingLevel, formData.assemblyId]);
+
+  useEffect(() => {
+    if (formData.workingLevel === "ASSEMBLY") {
+      setFormData((prev) => ({ ...prev, boothId: null }));
+      fetchBooths(formData.wardId, true);
+    }
+    if (formData.workingLevel === "WARD") {
+      setFormData((prev) => ({ ...prev, boothId: null }));
+      fetchBooths(formData.wardId, true);
+    }
+  }, [formData.workingLevel, formData.wardId]);
 
 
   // Submit handler → creates JSON
+  const resolveAssignment = () => {
+    if (formData.workingLevel === "ASSEMBLY") {
+      if (formData.boothId && formData.boothId !== "ALL") return { assignmentType: "BOOTH", assignmentId: formData.boothId };
+      if (formData.wardId) return { assignmentType: "WARD", assignmentId: formData.wardId };
+      if (formData.assemblyId) return { assignmentType: "ASSEMBLY", assignmentId: formData.assemblyId };
+    }
+    if (formData.workingLevel === "WARD") {
+      if (formData.boothId && formData.boothId !== "ALL") return { assignmentType: "BOOTH", assignmentId: formData.boothId };
+      if (formData.wardId) return { assignmentType: "WARD", assignmentId: formData.wardId };
+    }
+    if (formData.workingLevel === "BOOTH") {
+      if (formData.boothId) return { assignmentType: "BOOTH", assignmentId: formData.boothId };
+    }
+    return null;
+  };
+
   const handleSubmit = async () => {
+    const assignment = resolveAssignment();
+    if (!assignment) {
+      setBanner({ type: "error", message: "Please select the assignment level details" });
+      return;
+    }
     const dataToSend = {
       profilePicUrl: formData.profilePicUrl,
       firstName: formData.firstName.trim(),
       phone: formData.phone.trim(),
-      assignmentType: formData.workingLevel,   // Parliament / Assembly / Ward / Booth
-      assignmentId: formData.assignTo,         // Booth id or Assembly Id
+      assignmentType: assignment.assignmentType,
+      assignmentId: assignment.assignmentId,
       role: userInfo.role
     };
-    const res = await CRUDAPI.addVolunteer(dataToSend)
+    const res = await CRUDAPI.addVolunteer(dataToSend);
     if (res && res.success) {
       setBanner({ type: "success", message: "Added Volunteer successfully" });
       navigation.navigate("myVolunteers")
@@ -215,52 +333,307 @@ export default function AddVolunteer() {
             </View>
 
 
-            {/* Assign to (using DropDownPicker) */}
-            <Text className="text-white font-semibold mb-1 text-lg mt-6">
-              Assign to
-            </Text>
-            <View >
-              <DropDownPicker
-                open={openAssignTo}
-                value={formData.assignTo}
-                items={assignToItems}
-                setOpen={setOpenAssignTo}
-                setValue={(callback) => handleChange("assignTo", callback())}
-                onOpen={() => setOpenWorkingLevel(false)}
-                style={{
-                  backgroundColor: "#E3EDF3",
-                  borderColor: "#000",
-                  borderRadius: 10,
-                  minHeight: 48,
-                }}
-                dropDownContainerStyle={{
-                  borderColor: "#000",
-                  maxHeight: 200,
-                }}
-                selectedItemContainerStyle={{
-                  backgroundColor: bgColors.blue500_1,
-                }}
-                selectedItemLabelStyle={{
-                  color: "#FFFFFF",
-                  fontWeight: 600,
-                }}
-                textStyle={{
-                  color: "#000",
-                  fontSize: 14,
-                }}
-                placeholderStyle={{
-                  color: "#888",
-                }}
-                tickIconStyle={{
-                  tintColor: "#FFFFFF",
-                }}
-                listMode="SCROLLVIEW"
-                scrollViewProps={{
-                  nestedScrollEnabled: true,
-                }}
-                zIndex={100}
-              />
-            </View>
+            {formData.workingLevel === "ASSEMBLY" && (
+              <>
+                <Text className="text-white font-semibold mb-1 text-lg mt-6">
+                  Assembly
+                </Text>
+                <View>
+                  <DropDownPicker
+                    open={openAssembly}
+                    value={formData.assemblyId}
+                    items={assemblies}
+                    setOpen={setOpenAssembly}
+                    setValue={(callback) => handleChange("assemblyId", callback())}
+                    onOpen={() => {
+                      setOpenWorkingLevel(false);
+                      setOpenWard(false);
+                      setOpenBooth(false);
+                    }}
+                    style={{
+                      backgroundColor: "#E3EDF3",
+                      borderColor: "#000",
+                      borderRadius: 10,
+                      minHeight: 48,
+                    }}
+                    dropDownContainerStyle={{
+                      borderColor: "#000",
+                      maxHeight: 200,
+                    }}
+                    selectedItemContainerStyle={{
+                      backgroundColor: bgColors.blue500_1,
+                    }}
+                    selectedItemLabelStyle={{
+                      color: "#FFFFFF",
+                      fontWeight: 600,
+                    }}
+                    textStyle={{
+                      color: "#000",
+                      fontSize: 14,
+                    }}
+                    placeholderStyle={{
+                      color: "#888",
+                    }}
+                    tickIconStyle={{
+                      tintColor: "#FFFFFF",
+                    }}
+                    listMode="SCROLLVIEW"
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                  />
+                </View>
+
+                <Text className="text-white font-semibold mb-1 text-lg mt-6">
+                  Ward
+                </Text>
+                <View>
+                  <DropDownPicker
+                    open={openWard}
+                    value={formData.wardId}
+                    items={wards}
+                    setOpen={setOpenWard}
+                    setValue={(callback) => handleChange("wardId", callback())}
+                    onOpen={() => {
+                      setOpenWorkingLevel(false);
+                      setOpenAssembly(false);
+                      setOpenBooth(false);
+                    }}
+                    style={{
+                      backgroundColor: "#E3EDF3",
+                      borderColor: "#000",
+                      borderRadius: 10,
+                      minHeight: 48,
+                    }}
+                    dropDownContainerStyle={{
+                      borderColor: "#000",
+                      maxHeight: 200,
+                    }}
+                    selectedItemContainerStyle={{
+                      backgroundColor: bgColors.blue500_1,
+                    }}
+                    selectedItemLabelStyle={{
+                      color: "#FFFFFF",
+                      fontWeight: 600,
+                    }}
+                    textStyle={{
+                      color: "#000",
+                      fontSize: 14,
+                    }}
+                    placeholderStyle={{
+                      color: "#888",
+                    }}
+                    tickIconStyle={{
+                      tintColor: "#FFFFFF",
+                    }}
+                    listMode="SCROLLVIEW"
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                  />
+                </View>
+
+                <Text className="text-white font-semibold mb-1 text-lg mt-6">
+                  Booth
+                </Text>
+                <View>
+                  <DropDownPicker
+                    open={openBooth}
+                    value={formData.boothId}
+                    items={booths}
+                    setOpen={setOpenBooth}
+                    setValue={(callback) => handleChange("boothId", callback())}
+                    onOpen={() => {
+                      setOpenWorkingLevel(false);
+                      setOpenAssembly(false);
+                      setOpenWard(false);
+                    }}
+                    style={{
+                      backgroundColor: "#E3EDF3",
+                      borderColor: "#000",
+                      borderRadius: 10,
+                      minHeight: 48,
+                    }}
+                    dropDownContainerStyle={{
+                      borderColor: "#000",
+                      maxHeight: 200,
+                    }}
+                    selectedItemContainerStyle={{
+                      backgroundColor: bgColors.blue500_1,
+                    }}
+                    selectedItemLabelStyle={{
+                      color: "#FFFFFF",
+                      fontWeight: 600,
+                    }}
+                    textStyle={{
+                      color: "#000",
+                      fontSize: 14,
+                    }}
+                    placeholderStyle={{
+                      color: "#888",
+                    }}
+                    tickIconStyle={{
+                      tintColor: "#FFFFFF",
+                    }}
+                    listMode="SCROLLVIEW"
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                  />
+                </View>
+              </>
+            )}
+
+            {formData.workingLevel === "WARD" && (
+              <>
+                <Text className="text-white font-semibold mb-1 text-lg mt-6">
+                  Ward
+                </Text>
+                <View>
+                  <DropDownPicker
+                    open={openWard}
+                    value={formData.wardId}
+                    items={wards}
+                    setOpen={setOpenWard}
+                    setValue={(callback) => handleChange("wardId", callback())}
+                    onOpen={() => {
+                      setOpenWorkingLevel(false);
+                      setOpenBooth(false);
+                    }}
+                    style={{
+                      backgroundColor: "#E3EDF3",
+                      borderColor: "#000",
+                      borderRadius: 10,
+                      minHeight: 48,
+                    }}
+                    dropDownContainerStyle={{
+                      borderColor: "#000",
+                      maxHeight: 200,
+                    }}
+                    selectedItemContainerStyle={{
+                      backgroundColor: bgColors.blue500_1,
+                    }}
+                    selectedItemLabelStyle={{
+                      color: "#FFFFFF",
+                      fontWeight: 600,
+                    }}
+                    textStyle={{
+                      color: "#000",
+                      fontSize: 14,
+                    }}
+                    placeholderStyle={{
+                      color: "#888",
+                    }}
+                    tickIconStyle={{
+                      tintColor: "#FFFFFF",
+                    }}
+                    listMode="SCROLLVIEW"
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                  />
+                </View>
+
+                <Text className="text-white font-semibold mb-1 text-lg mt-6">
+                  Booth
+                </Text>
+                <View>
+                  <DropDownPicker
+                    open={openBooth}
+                    value={formData.boothId}
+                    items={booths}
+                    setOpen={setOpenBooth}
+                    setValue={(callback) => handleChange("boothId", callback())}
+                    onOpen={() => {
+                      setOpenWorkingLevel(false);
+                      setOpenWard(false);
+                    }}
+                    style={{
+                      backgroundColor: "#E3EDF3",
+                      borderColor: "#000",
+                      borderRadius: 10,
+                      minHeight: 48,
+                    }}
+                    dropDownContainerStyle={{
+                      borderColor: "#000",
+                      maxHeight: 200,
+                    }}
+                    selectedItemContainerStyle={{
+                      backgroundColor: bgColors.blue500_1,
+                    }}
+                    selectedItemLabelStyle={{
+                      color: "#FFFFFF",
+                      fontWeight: 600,
+                    }}
+                    textStyle={{
+                      color: "#000",
+                      fontSize: 14,
+                    }}
+                    placeholderStyle={{
+                      color: "#888",
+                    }}
+                    tickIconStyle={{
+                      tintColor: "#FFFFFF",
+                    }}
+                    listMode="SCROLLVIEW"
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                  />
+                </View>
+              </>
+            )}
+
+            {formData.workingLevel === "BOOTH" && (
+              <>
+                <Text className="text-white font-semibold mb-1 text-lg mt-6">
+                  Booth
+                </Text>
+                <View>
+                  <DropDownPicker
+                    open={openBooth}
+                    value={formData.boothId}
+                    items={booths}
+                    setOpen={setOpenBooth}
+                    setValue={(callback) => handleChange("boothId", callback())}
+                    onOpen={() => {
+                      setOpenWorkingLevel(false);
+                    }}
+                    style={{
+                      backgroundColor: "#E3EDF3",
+                      borderColor: "#000",
+                      borderRadius: 10,
+                      minHeight: 48,
+                    }}
+                    dropDownContainerStyle={{
+                      borderColor: "#000",
+                      maxHeight: 200,
+                    }}
+                    selectedItemContainerStyle={{
+                      backgroundColor: bgColors.blue500_1,
+                    }}
+                    selectedItemLabelStyle={{
+                      color: "#FFFFFF",
+                      fontWeight: 600,
+                    }}
+                    textStyle={{
+                      color: "#000",
+                      fontSize: 14,
+                    }}
+                    placeholderStyle={{
+                      color: "#888",
+                    }}
+                    tickIconStyle={{
+                      tintColor: "#FFFFFF",
+                    }}
+                    listMode="SCROLLVIEW"
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                  />
+                </View>
+              </>
+            )}
 
             {/* Submit Button */}
             <TouchableOpacity
