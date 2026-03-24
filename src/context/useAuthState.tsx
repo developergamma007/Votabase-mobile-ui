@@ -45,6 +45,11 @@ export default function useAuthState() {
     await AsyncStorage.removeItem('userData');
     await AsyncStorage.removeItem('loggedInUser');
     await AsyncStorage.removeItem('newLoggedInUser');
+    await AsyncStorage.removeItem('assemblyData');
+    await AsyncStorage.removeItem('boothSnapshotLite');
+    const keys = await AsyncStorage.getAllKeys();
+    const cacheKeys = keys.filter((k) => k.startsWith('vb_cache'));
+    if (cacheKeys.length) await AsyncStorage.multiRemove(cacheKeys);
   };
 
   return {

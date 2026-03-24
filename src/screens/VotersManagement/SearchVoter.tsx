@@ -34,7 +34,14 @@ export default function SearchVoter() {
       const assemblyData = await AsyncStorage.getItem("assemblyData");
       const parsed = JSON.parse(assemblyData || "{}");
       const wards = parsed?.assembly?.wards || [];
-      setWardsList(wards);
+      const seen = new Set<string>();
+      const uniqueWards = wards.filter((w) => {
+        const id = w?.wardId != null ? String(w.wardId) : "";
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      setWardsList(uniqueWards);
     };
     loadWards();
   }, []);

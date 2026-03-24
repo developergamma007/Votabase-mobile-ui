@@ -44,9 +44,16 @@ export default function SearchVoter() {
             const fallbackData = await AsyncStorage.getItem("assemblyData");
             const parsed = JSON.parse(liteData || fallbackData || "{}");
             const wards = parsed?.assembly?.wards || [];
+            const seen = new Set<string>();
+            const uniqueWards = wards.filter((w) => {
+                const id = w?.wardId != null ? String(w.wardId) : "";
+                if (!id || seen.has(id)) return false;
+                seen.add(id);
+                return true;
+            });
 
             setWardItems(
-                wards.map((w) => ({
+                uniqueWards.map((w) => ({
                     label: w.wardNameEn || `Ward ${w.wardId}`,
                     value: w.wardId,
                 }))

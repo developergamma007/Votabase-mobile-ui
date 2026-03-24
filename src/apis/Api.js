@@ -1,4 +1,67 @@
 import apiClient from './ApiClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const CACHE_PREFIX = 'vb_cache';
+const CACHE_USER_KEY = `${CACHE_PREFIX}_user`;
+const memoryCache = new Map();
+
+const getUserCacheId = async () => {
+    try {
+        const raw = await AsyncStorage.getItem('userInfo');
+        if (!raw) return 'anonymous';
+        const user = JSON.parse(raw);
+        return (
+            user?.userName ||
+            user?.firstName ||
+            user?.phone ||
+            user?.tenantId ||
+            'anonymous'
+        );
+    } catch {
+        return 'anonymous';
+    }
+};
+
+const clearAllCaches = async () => {
+    memoryCache.clear();
+    const keys = await AsyncStorage.getAllKeys();
+    const cacheKeys = keys.filter((k) => k.startsWith(CACHE_PREFIX));
+    if (cacheKeys.length) await AsyncStorage.multiRemove(cacheKeys);
+};
+
+const ensureCacheUser = async () => {
+    const currentUser = await getUserCacheId();
+    const lastUser = await AsyncStorage.getItem(CACHE_USER_KEY);
+    if (lastUser && lastUser !== currentUser) {
+        await clearAllCaches();
+    }
+    await AsyncStorage.setItem(CACHE_USER_KEY, currentUser);
+    return currentUser;
+};
+
+const cacheKey = (userId, suffix) => `${CACHE_PREFIX}_${userId}_${suffix}`;
+
+const getCached = async (suffix) => {
+    const userId = await ensureCacheUser();
+    const key = cacheKey(userId, suffix);
+    if (memoryCache.has(key)) return memoryCache.get(key);
+    const raw = await AsyncStorage.getItem(key);
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw);
+        memoryCache.set(key, parsed);
+        return parsed;
+    } catch {
+        return null;
+    }
+};
+
+const setCached = async (suffix, value) => {
+    const userId = await ensureCacheUser();
+    const key = cacheKey(userId, suffix);
+    memoryCache.set(key, value);
+    await AsyncStorage.setItem(key, JSON.stringify(value));
+};
 
 const PUBLIC_VOTER_UPDATE_FIELDS = new Set([
     'mobile',
@@ -67,8 +130,12 @@ export const CRUDAPI = {
 
     loadData: async () => {
         try {
+            const cached = await getCached('snapshot_full');
+            if (cached) return cached;
             const response = await apiClient.get('/votebase/v1/api/voters/snapshot?assemblyCode=000000000175');
-            return response.data;
+            const data = response.data;
+            await setCached('snapshot_full', data);
+            return data;
         } catch (error) {
             console.log('Load data API Error:', error.response?.data || error.message);
             throw error;
@@ -77,8 +144,12 @@ export const CRUDAPI = {
 
     loadDataLite: async () => {
         try {
+            const cached = await getCached('snapshot_lite');
+            if (cached) return cached;
             const response = await apiClient.get('/votebase/v1/api/voters/snapshot?assemblyCode=000000000175&includeVoters=false');
-            return response.data;
+            const data = response.data;
+            await setCached('snapshot_lite', data);
+            return data;
         } catch (error) {
             console.log('Load lite data API Error:', error.response?.data || error.message);
             throw error;
@@ -87,8 +158,13 @@ export const CRUDAPI = {
 
     fetchBoothVoters: async (boothId) => {
         try {
+            const suffix = `booth_voters_${boothId}`;
+            const cached = await getCached(suffix);
+            if (cached) return cached;
             const response = await apiClient.get(`/votebase/v1/api/voters/by-booth?boothId=${boothId}`);
-            return response.data;
+            const data = response.data;
+            await setCached(suffix, data);
+            return data;
         } catch (error) {
             console.log('Fetch booth voters API Error:', error.response?.data || error.message);
             throw error;
@@ -113,8 +189,16 @@ export const CRUDAPI = {
             if (params.relationName?.trim()) query.relationName = params.relationName.trim();
             if (params.houseNumber?.trim()) query.houseNumber = params.houseNumber.trim();
 
+            const cacheSuffix = `voter_search_${Object.keys(query)
+                .sort()
+                .map((k) => `${k}=${String(query[k])}`)
+                .join("&")}`;
+            const cached = await getCached(cacheSuffix);
+            if (cached) return cached;
             const response = await apiClient.get('/votebase/v1/api/voter-search', { params: query });
-            return response.data;
+            const data = response.data;
+            await setCached(cacheSuffix, data);
+            return data;
         } catch (error) {
             console.log('Search voters API Error:', error.response?.data || error.message);
             throw error;
@@ -164,9 +248,17 @@ export const CRUDAPI = {
         }
     },
 
-    getVolunteerList: async (role, page, size, search, blocked, sortBy, direction, assignmentType) => {
+    getVolunteerList: async (page, size, search, blocked, sortBy, direction, workingLevel) => {
         try {
-            const response = await apiClient.get(`/votebase/v1/api/user?role=${role}&page=${page}&size=${size}&search=${search}&blocked=${blocked}&sortBy=${sortBy}&direction=${direction}&assignmentType=${assignmentType}`);
+            const params = new URLSearchParams();
+            params.set('page', String(page ?? 0));
+            params.set('size', String(size ?? 10));
+            if (search) params.set('search', String(search));
+            if (blocked !== undefined && blocked !== null && String(blocked) !== '') params.set('blocked', String(blocked));
+            if (sortBy) params.set('sortBy', String(sortBy));
+            if (direction) params.set('direction', String(direction));
+            if (workingLevel) params.set('workingLevel', String(workingLevel));
+            const response = await apiClient.get(`/votebase/v1/api/volunteers?${params.toString()}`);
             return response.data;
         } catch (error) {
             console.log('Error while fetching volunteer data:', error.response.data || error.message)
@@ -176,7 +268,7 @@ export const CRUDAPI = {
 
     addVolunteer: async (data) => {
         try {
-            const response = await apiClient.post('/votebase/v1/api/user/register', data);
+            const response = await apiClient.post('/votebase/v1/api/volunteers', data);
             return response?.data;
         } catch (error) {
             console.log('Error while adding volunteer:', error.response?.data || error.message);
@@ -227,8 +319,12 @@ export const CRUDAPI = {
 
     fetchBoothIds: async () => {
         try {
+            const cached = await getCached('booth_ids');
+            if (cached) return cached;
             const response = await apiClient.get('/votebase/v1/api/booth');
-            return response.data;
+            const data = response.data;
+            await setCached('booth_ids', data);
+            return data;
         } catch (error) {
             console.log('Error while fetching booth ids:', error.response?.data || error.message);
             throw error;
@@ -245,9 +341,14 @@ export const CRUDAPI = {
     },
     fetchVolunteerDropdown: async (level, parentId) => {
         try {
+            const suffix = `volunteer_dropdown_${level || 'ALL'}_${parentId || 'root'}`;
+            const cached = await getCached(suffix);
+            if (cached) return cached;
             const query = parentId ? `?level=${encodeURIComponent(level)}&parentId=${encodeURIComponent(parentId)}` : `?level=${encodeURIComponent(level)}`;
             const response = await apiClient.get(`/votebase/v1/api/volunteers/dropdown${query}`);
-            return response.data;
+            const data = response.data;
+            await setCached(suffix, data);
+            return data;
         } catch (error) {
             console.log('Error while fetching volunteer dropdown:', error.response?.data || error.message);
             throw error;
@@ -255,9 +356,14 @@ export const CRUDAPI = {
     },
     fetchWards: async (assemblyId) => {
         try {
+            const suffix = `wards_${assemblyId || 'all'}`;
+            const cached = await getCached(suffix);
+            if (cached) return cached;
             const query = assemblyId ? `?assemblyId=${encodeURIComponent(assemblyId)}` : '';
             const response = await apiClient.get(`/votebase/v1/api/wards${query}`);
-            return response.data;
+            const data = response.data;
+            await setCached(suffix, data);
+            return data;
         } catch (error) {
             console.log('Error while fetching wards:', error.response?.data || error.message);
             throw error;
@@ -265,24 +371,28 @@ export const CRUDAPI = {
     },
     fetchBooths: async (assemblyCode, wardId) => {
         try {
+            const suffix = `booths_${assemblyCode || 'all'}_${wardId || 'all'}`;
+            const cached = await getCached(suffix);
+            if (cached) return cached;
             const params = new URLSearchParams();
             if (assemblyCode) params.set('assemblyCode', String(assemblyCode));
             if (wardId) params.set('wardId', String(wardId));
             const qs = params.toString();
             const response = await apiClient.get(`/votebase/v1/api/booths${qs ? `?${qs}` : ''}`);
-            return response.data;
+            const data = response.data;
+            await setCached(suffix, data);
+            return data;
         } catch (error) {
             console.log('Error while fetching booths:', error.response?.data || error.message);
             throw error;
         }
     },
-
-    addVolunteer: async (jsonReq) => {
+    ping: async () => {
         try {
-            const response = await apiClient.post('/votebase/v1/api/user/register', jsonReq);
-            return response.data
+            const response = await apiClient.get('/votebase/v1/api/user/profile');
+            return response.data;
         } catch (error) {
-            console.log('Error while adding volunteer')
+            throw error;
         }
     },
 

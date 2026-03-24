@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Alert,
   Image,
   ScrollView,
 } from "react-native";
@@ -18,17 +17,19 @@ import { useNavigation } from "@react-navigation/native";
 import { bgColors } from "../../constants/colors";
 
 export default function AddVolunteer() {
-  const { setBanner, userInfo } = useContext(AuthContext);
+  const { setBanner } = useContext(AuthContext);
   const navigation = useNavigation();
+  const ALL_WARDS_VALUE = "__ALL_WARDS__";
+  const ALL_BOOTHS_VALUE = "__ALL_BOOTHS__";
   // 1. Single main useState object now including profilePicUrl
   const [formData, setFormData] = useState({
     firstName: "",
     phone: "",
     profilePicUrl: "",
-    workingLevel: "ASSEMBLY",   // assignmentType
-    assemblyId: null,
-    wardId: null,
-    boothId: null,
+    workingLevel: "ASSEMBLY",
+    assemblyId: "",
+    wardIds: [],
+    boothIds: [],
   });
 
   // 2. State for controlling DropDownPicker visibility
@@ -49,9 +50,11 @@ export default function AddVolunteer() {
 
   // Helper function to update the main state
   const handleChange = (name, value) => {
+    const nextValue =
+      name === "phone" ? String(value || "").replace(/\D/g, "").slice(0, 10) : value;
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: nextValue,
     }));
   };
 
@@ -77,7 +80,7 @@ export default function AddVolunteer() {
       const res = await CRUDAPI.fetchWards(assemblyId);
       const formatted = (res || []).map((item) => ({
         label: item.wardNameEn || `Ward ${item.wardId}`,
-        value: item.wardId,
+        value: String(item.wardId),
       }));
       setWards(formatted);
     } catch {
@@ -85,45 +88,19 @@ export default function AddVolunteer() {
     }
   };
 
-  const fetchWardsAll = async () => {
+  const fetchBooths = async (wardIds = []) => {
     try {
-      const res = await CRUDAPI.fetchWards();
-      const formatted = (res || []).map((item) => ({
-        label: item.wardNameEn || `Ward ${item.wardId}`,
-        value: item.wardId,
-      }));
-      setWards(formatted);
-    } catch {
-      setWards([]);
-    }
-  };
-
-  const fetchBooths = async (wardId, includeAll = false) => {
-    try {
-      if (!wardId) {
-        setBooths(includeAll ? [{ label: "All Booths", value: "ALL" }] : []);
+      if (!wardIds.length) {
+        setBooths([]);
         return;
       }
-      const res = await CRUDAPI.fetchBooths(null, wardId);
-      const formatted = (res || []).map((item) => ({
+      const responses = await Promise.all(wardIds.map((id) => CRUDAPI.fetchBooths(null, id)));
+      const merged = responses.flat().map((item) => ({
         label: item.pollingStationAdrEn || `Booth ${item.boothId}`,
-        value: item.boothId,
+        value: String(item.boothId),
       }));
-      const withAll = includeAll ? [{ label: "All Booths", value: "ALL" }, ...formatted] : formatted;
-      setBooths(withAll);
-    } catch {
-      setBooths(includeAll ? [{ label: "All Booths", value: "ALL" }] : []);
-    }
-  };
-
-  const fetchBoothsAll = async () => {
-    try {
-      const res = await CRUDAPI.fetchBooths();
-      const formatted = (res || []).map((item) => ({
-        label: item.pollingStationAdrEn || `Booth ${item.boothId}`,
-        value: item.boothId,
-      }));
-      setBooths(formatted);
+      const unique = Array.from(new Map(merged.map((item) => [String(item.value), item])).values());
+      setBooths(unique);
     } catch {
       setBooths([]);
     }
@@ -137,70 +114,80 @@ export default function AddVolunteer() {
     // Reset dependent selections when working level changes
     setFormData((prev) => ({
       ...prev,
-      assemblyId: null,
-      wardId: null,
-      boothId: null,
+      assemblyId: "",
+      wardIds: [],
+      boothIds: [],
     }));
     setWards([]);
     setBooths([]);
-
-    if (formData.workingLevel === "WARD") {
-      fetchWardsAll();
-    }
-    if (formData.workingLevel === "BOOTH") {
-      fetchBoothsAll();
-    }
   }, [formData.workingLevel]);
 
   useEffect(() => {
-    if (formData.workingLevel === "ASSEMBLY") {
-      setFormData((prev) => ({ ...prev, wardId: null, boothId: null }));
-      fetchWards(formData.assemblyId);
-    }
+    setFormData((prev) => ({ ...prev, wardIds: [], boothIds: [] }));
+    fetchWards(formData.assemblyId);
   }, [formData.workingLevel, formData.assemblyId]);
 
   useEffect(() => {
-    if (formData.workingLevel === "ASSEMBLY") {
-      setFormData((prev) => ({ ...prev, boothId: null }));
-      fetchBooths(formData.wardId, true);
-    }
-    if (formData.workingLevel === "WARD") {
-      setFormData((prev) => ({ ...prev, boothId: null }));
-      fetchBooths(formData.wardId, true);
-    }
-  }, [formData.workingLevel, formData.wardId]);
+    setFormData((prev) => ({ ...prev, boothIds: [] }));
+    fetchBooths(formData.wardIds);
+  }, [formData.workingLevel, formData.wardIds]);
 
-
-  // Submit handler → creates JSON
-  const resolveAssignment = () => {
-    if (formData.workingLevel === "ASSEMBLY") {
-      if (formData.boothId && formData.boothId !== "ALL") return { assignmentType: "BOOTH", assignmentId: formData.boothId };
-      if (formData.wardId) return { assignmentType: "WARD", assignmentId: formData.wardId };
-      if (formData.assemblyId) return { assignmentType: "ASSEMBLY", assignmentId: formData.assemblyId };
-    }
-    if (formData.workingLevel === "WARD") {
-      if (formData.boothId && formData.boothId !== "ALL") return { assignmentType: "BOOTH", assignmentId: formData.boothId };
-      if (formData.wardId) return { assignmentType: "WARD", assignmentId: formData.wardId };
-    }
-    if (formData.workingLevel === "BOOTH") {
-      if (formData.boothId) return { assignmentType: "BOOTH", assignmentId: formData.boothId };
-    }
-    return null;
+  const allWardValues = wards.map((item) => String(item.value));
+  const allBoothValues = booths.map((item) => String(item.value));
+  const wardItems = [{ label: "All Wards", value: ALL_WARDS_VALUE }, ...wards];
+  const boothItems = [{ label: "All Booths", value: ALL_BOOTHS_VALUE }, ...booths];
+  const normalizeSelection = (values, allValue, allOptions) => {
+    if (!Array.isArray(values)) return [];
+    if (values.includes(allValue)) return allOptions;
+    return values.filter((v) => v !== allValue);
+  };
+  const setWardIdsWithAll = (callback) => {
+    setFormData((prev) => {
+      const next = callback(prev.wardIds);
+      return {
+        ...prev,
+        wardIds: normalizeSelection(next, ALL_WARDS_VALUE, allWardValues),
+      };
+    });
+  };
+  const setBoothIdsWithAll = (callback) => {
+    setFormData((prev) => {
+      const next = callback(prev.boothIds);
+      return {
+        ...prev,
+        boothIds: normalizeSelection(next, ALL_BOOTHS_VALUE, allBoothValues),
+      };
+    });
   };
 
   const handleSubmit = async () => {
-    const assignment = resolveAssignment();
-    if (!assignment) {
-      setBanner({ type: "error", message: "Please select the assignment level details" });
+    if (!formData.firstName.trim()) {
+      setBanner({ type: "error", message: "Please enter first name" });
+      return;
+    }
+    if (!formData.phone || formData.phone.length !== 10) {
+      setBanner({ type: "error", message: "Please enter a 10 digit phone number" });
+      return;
+    }
+    if (!formData.assemblyId) {
+      setBanner({ type: "error", message: "Please select an assembly" });
+      return;
+    }
+    if (formData.workingLevel === "WARD" && (!formData.wardIds || !formData.wardIds.length)) {
+      setBanner({ type: "error", message: "Please select at least one ward" });
+      return;
+    }
+    if (formData.workingLevel === "BOOTH" && (!formData.boothIds || !formData.boothIds.length)) {
+      setBanner({ type: "error", message: "Please select at least one booth" });
       return;
     }
     const dataToSend = {
-      profilePicUrl: formData.profilePicUrl,
       firstName: formData.firstName.trim(),
       phone: formData.phone.trim(),
-      assignmentType: assignment.assignmentType,
-      assignmentId: assignment.assignmentId,
-      role: userInfo.role
+      workingLevel: formData.workingLevel,
+      assemblyIds: formData.assemblyId ? [Number(formData.assemblyId)] : [],
+      wardIds: (formData.wardIds || []).map((id) => Number(id)),
+      boothIds: (formData.boothIds || []).map((id) => Number(id)),
     };
     const res = await CRUDAPI.addVolunteer(dataToSend);
     if (res && res.success) {
@@ -257,7 +244,7 @@ export default function AddVolunteer() {
               ) : (
                 <View className={`w-28 h-28 rounded-full ${bgColors.customLightBlue3} items-center justify-center`}>
                   <Text className="text-4xl font-semibold text-[#2E6F91]">
-                    {GetInitials(formData.name)}
+                    {GetInitials(formData.firstName)}
                   </Text>
                 </View>
               )}
@@ -280,7 +267,7 @@ export default function AddVolunteer() {
             <TextInput
               placeholder="Phone"
               placeholderTextColor="#fff"
-              secureTextEntry
+              keyboardType="numeric"
               value={formData.phone}
               onChangeText={(t) => handleChange("phone", t)}
               className={`${bgColors.white20} text-white px-4 py-3 rounded-xl mb-6 text-lg`}
@@ -296,8 +283,7 @@ export default function AddVolunteer() {
                 value={formData.workingLevel}
                 items={workingLevelItems}
                 setOpen={setOpenWorkingLevel}
-                setValue={(callback) => handleChange("workingLevel", callback())}
-                onOpen={() => setOpenAssignTo(false)}
+                setValue={(callback) => handleChange("workingLevel", callback(formData.workingLevel))}
                 style={{
                   backgroundColor: "#E3EDF3",
                   borderColor: "#000",
@@ -344,7 +330,7 @@ export default function AddVolunteer() {
                     value={formData.assemblyId}
                     items={assemblies}
                     setOpen={setOpenAssembly}
-                    setValue={(callback) => handleChange("assemblyId", callback())}
+                    setValue={(callback) => handleChange("assemblyId", callback(formData.assemblyId))}
                     onOpen={() => {
                       setOpenWorkingLevel(false);
                       setOpenWard(false);
@@ -367,6 +353,7 @@ export default function AddVolunteer() {
                       color: "#FFFFFF",
                       fontWeight: 600,
                     }}
+                    showTickIcon={true}
                     textStyle={{
                       color: "#000",
                       fontSize: 14,
@@ -389,11 +376,13 @@ export default function AddVolunteer() {
                 </Text>
                 <View>
                   <DropDownPicker
+                    multiple
+                    min={0}
                     open={openWard}
-                    value={formData.wardId}
-                    items={wards}
+                    value={formData.wardIds}
+                    items={wardItems}
                     setOpen={setOpenWard}
-                    setValue={(callback) => handleChange("wardId", callback())}
+                    setValue={setWardIdsWithAll}
                     onOpen={() => {
                       setOpenWorkingLevel(false);
                       setOpenAssembly(false);
@@ -416,6 +405,7 @@ export default function AddVolunteer() {
                       color: "#FFFFFF",
                       fontWeight: 600,
                     }}
+                    showTickIcon={true}
                     textStyle={{
                       color: "#000",
                       fontSize: 14,
@@ -427,6 +417,8 @@ export default function AddVolunteer() {
                       tintColor: "#FFFFFF",
                     }}
                     listMode="SCROLLVIEW"
+                    mode="BADGE"
+                    closeAfterSelecting={false}
                     scrollViewProps={{
                       nestedScrollEnabled: true,
                     }}
@@ -438,11 +430,13 @@ export default function AddVolunteer() {
                 </Text>
                 <View>
                   <DropDownPicker
+                    multiple
+                    min={0}
                     open={openBooth}
-                    value={formData.boothId}
-                    items={booths}
+                    value={formData.boothIds}
+                    items={boothItems}
                     setOpen={setOpenBooth}
-                    setValue={(callback) => handleChange("boothId", callback())}
+                    setValue={setBoothIdsWithAll}
                     onOpen={() => {
                       setOpenWorkingLevel(false);
                       setOpenAssembly(false);
@@ -465,6 +459,7 @@ export default function AddVolunteer() {
                       color: "#FFFFFF",
                       fontWeight: 600,
                     }}
+                    showTickIcon={true}
                     textStyle={{
                       color: "#000",
                       fontSize: 14,
@@ -476,6 +471,8 @@ export default function AddVolunteer() {
                       tintColor: "#FFFFFF",
                     }}
                     listMode="SCROLLVIEW"
+                    mode="BADGE"
+                    closeAfterSelecting={false}
                     scrollViewProps={{
                       nestedScrollEnabled: true,
                     }}
@@ -487,17 +484,178 @@ export default function AddVolunteer() {
             {formData.workingLevel === "WARD" && (
               <>
                 <Text className="text-white font-semibold mb-1 text-lg mt-6">
+                  Assembly
+                </Text>
+                <View>
+                  <DropDownPicker
+                    open={openAssembly}
+                    value={formData.assemblyId}
+                    items={assemblies}
+                    setOpen={setOpenAssembly}
+                    setValue={(callback) => handleChange("assemblyId", callback(formData.assemblyId))}
+                    onOpen={() => {
+                      setOpenWorkingLevel(false);
+                      setOpenWard(false);
+                      setOpenBooth(false);
+                    }}
+                    style={{
+                      backgroundColor: "#E3EDF3",
+                      borderColor: "#000",
+                      borderRadius: 10,
+                      minHeight: 48,
+                    }}
+                    dropDownContainerStyle={{
+                      borderColor: "#000",
+                      maxHeight: 200,
+                    }}
+                    selectedItemContainerStyle={{
+                      backgroundColor: bgColors.blue500_1,
+                    }}
+                    selectedItemLabelStyle={{
+                      color: "#FFFFFF",
+                      fontWeight: 600,
+                    }}
+                    showTickIcon={true}
+                    textStyle={{
+                      color: "#000",
+                      fontSize: 14,
+                    }}
+                    placeholderStyle={{
+                      color: "#888",
+                    }}
+                    tickIconStyle={{
+                      tintColor: "#FFFFFF",
+                    }}
+                    listMode="SCROLLVIEW"
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                  />
+                </View>
+
+                <Text className="text-white font-semibold mb-1 text-lg mt-6">
                   Ward
                 </Text>
                 <View>
                   <DropDownPicker
+                    multiple
+                    min={0}
                     open={openWard}
-                    value={formData.wardId}
-                    items={wards}
+                    value={formData.wardIds}
+                    items={wardItems}
                     setOpen={setOpenWard}
-                    setValue={(callback) => handleChange("wardId", callback())}
+                    setValue={setWardIdsWithAll}
                     onOpen={() => {
                       setOpenWorkingLevel(false);
+                      setOpenBooth(false);
+                    }}
+                    style={{
+                      backgroundColor: "#E3EDF3",
+                      borderColor: "#000",
+                      borderRadius: 10,
+                      minHeight: 48,
+                    }}
+                    dropDownContainerStyle={{
+                      borderColor: "#000",
+                      maxHeight: 200,
+                    }}
+                    selectedItemContainerStyle={{
+                      backgroundColor: bgColors.blue500_1,
+                    }}
+                    selectedItemLabelStyle={{
+                      color: "#FFFFFF",
+                      fontWeight: 600,
+                    }}
+                    showTickIcon={true}
+                    textStyle={{
+                      color: "#000",
+                      fontSize: 14,
+                    }}
+                    placeholderStyle={{
+                      color: "#888",
+                    }}
+                    tickIconStyle={{
+                      tintColor: "#FFFFFF",
+                    }}
+                    listMode="SCROLLVIEW"
+                    mode="BADGE"
+                    closeAfterSelecting={false}
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                  />
+                </View>
+
+                <Text className="text-white font-semibold mb-1 text-lg mt-6">
+                  Booth
+                </Text>
+                <View>
+                  <DropDownPicker
+                    multiple
+                    min={0}
+                    open={openBooth}
+                    value={formData.boothIds}
+                    items={boothItems}
+                    setOpen={setOpenBooth}
+                    setValue={setBoothIdsWithAll}
+                    onOpen={() => {
+                      setOpenWorkingLevel(false);
+                      setOpenWard(false);
+                    }}
+                    style={{
+                      backgroundColor: "#E3EDF3",
+                      borderColor: "#000",
+                      borderRadius: 10,
+                      minHeight: 48,
+                    }}
+                    dropDownContainerStyle={{
+                      borderColor: "#000",
+                      maxHeight: 200,
+                    }}
+                    selectedItemContainerStyle={{
+                      backgroundColor: bgColors.blue500_1,
+                    }}
+                    selectedItemLabelStyle={{
+                      color: "#FFFFFF",
+                      fontWeight: 600,
+                    }}
+                    showTickIcon={true}
+                    textStyle={{
+                      color: "#000",
+                      fontSize: 14,
+                    }}
+                    placeholderStyle={{
+                      color: "#888",
+                    }}
+                    tickIconStyle={{
+                      tintColor: "#FFFFFF",
+                    }}
+                    listMode="SCROLLVIEW"
+                    mode="BADGE"
+                    closeAfterSelecting={false}
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                  />
+                </View>
+              </>
+            )}
+
+            {formData.workingLevel === "BOOTH" && (
+              <>
+                <Text className="text-white font-semibold mb-1 text-lg mt-6">
+                  Assembly
+                </Text>
+                <View>
+                  <DropDownPicker
+                    open={openAssembly}
+                    value={formData.assemblyId}
+                    items={assemblies}
+                    setOpen={setOpenAssembly}
+                    setValue={(callback) => handleChange("assemblyId", callback(formData.assemblyId))}
+                    onOpen={() => {
+                      setOpenWorkingLevel(false);
+                      setOpenWard(false);
                       setOpenBooth(false);
                     }}
                     style={{
@@ -535,18 +693,20 @@ export default function AddVolunteer() {
                 </View>
 
                 <Text className="text-white font-semibold mb-1 text-lg mt-6">
-                  Booth
+                  Ward
                 </Text>
                 <View>
                   <DropDownPicker
-                    open={openBooth}
-                    value={formData.boothId}
-                    items={booths}
-                    setOpen={setOpenBooth}
-                    setValue={(callback) => handleChange("boothId", callback())}
+                    multiple
+                    min={0}
+                    open={openWard}
+                    value={formData.wardIds}
+                    items={wardItems}
+                    setOpen={setOpenWard}
+                    setValue={setWardIdsWithAll}
                     onOpen={() => {
                       setOpenWorkingLevel(false);
-                      setOpenWard(false);
+                      setOpenBooth(false);
                     }}
                     style={{
                       backgroundColor: "#E3EDF3",
@@ -576,26 +736,26 @@ export default function AddVolunteer() {
                       tintColor: "#FFFFFF",
                     }}
                     listMode="SCROLLVIEW"
+                    mode="BADGE"
+                    closeAfterSelecting={false}
                     scrollViewProps={{
                       nestedScrollEnabled: true,
                     }}
                   />
                 </View>
-              </>
-            )}
 
-            {formData.workingLevel === "BOOTH" && (
-              <>
                 <Text className="text-white font-semibold mb-1 text-lg mt-6">
                   Booth
                 </Text>
                 <View>
                   <DropDownPicker
+                    multiple
+                    min={0}
                     open={openBooth}
-                    value={formData.boothId}
-                    items={booths}
+                    value={formData.boothIds}
+                    items={boothItems}
                     setOpen={setOpenBooth}
-                    setValue={(callback) => handleChange("boothId", callback())}
+                    setValue={setBoothIdsWithAll}
                     onOpen={() => {
                       setOpenWorkingLevel(false);
                     }}
@@ -627,6 +787,8 @@ export default function AddVolunteer() {
                       tintColor: "#FFFFFF",
                     }}
                     listMode="SCROLLVIEW"
+                    mode="BADGE"
+                    closeAfterSelecting={false}
                     scrollViewProps={{
                       nestedScrollEnabled: true,
                     }}

@@ -54,7 +54,6 @@ export default function MyVolunteers() {
       if (pageNum > 0) setLoadingMore(true);
 
       const res = await CRUDAPI.getVolunteerList(
-        userInfo.role,
         pageNum,
         size,
         debouncedSearch,
@@ -108,11 +107,11 @@ export default function MyVolunteers() {
   };
 
   // Toggle Selection
-  const toggleSelect = (userName) => {
-    if (selected.includes(userName)) {
-      setSelected(selected.filter((s) => s !== userName));
+  const toggleSelect = (volunteerId) => {
+    if (selected.includes(volunteerId)) {
+      setSelected(selected.filter((s) => s !== volunteerId));
     } else {
-      setSelected([...selected, userName]);
+      setSelected([...selected, volunteerId]);
     }
   };
 
@@ -225,30 +224,33 @@ export default function MyVolunteers() {
 
           {/* Volunteer List */}
           {volunteersList.length > 0 &&
-            volunteersList?.map((v) => (
+            volunteersList?.map((v) => {
+              const selectionKey = v.userName || v.phone;
+              const reactKey = v.userName ? `${v.userName}-${v.phone}` : v.phone;
+              return (
               <View
-                key={v.userName}
+                key={reactKey}
                 className="flex-row items-center justify-between border-b border-gray-200 py-4"
               >
                 <View className="flex-row items-center space-x-3">
                   <TouchableOpacity
-                    onPress={() => toggleSelect(v.userName)}
-                    className={`w-6 h-6 rounded-md border border-gray-500 items-center justify-center ${selected.includes(v.userName) ? bgColors.blue500 : bgColors.white
+                    onPress={() => toggleSelect(selectionKey)}
+                    className={`w-6 h-6 rounded-md border border-gray-500 items-center justify-center ${selected.includes(selectionKey) ? bgColors.blue500 : bgColors.white
                       }`}
                   >
-                    {selected.includes(v.userName) && (
+                    {selected.includes(selectionKey) && (
                       <Text className="text-white font-bold">✓</Text>
                     )}
                   </TouchableOpacity>
 
                   <View>
                     <Text className="text-gray-900 font-semibold ml-3">
-                      {(v.firstName + " " + v.lastName).slice(0, 12)}
-                      {(v.firstName + " " + v.lastName).length > 12 ? "..." : ""}
-                    </Text>
-                    <Text className="text-gray-600 text-sm ml-3">{v.phone}</Text>
-                  </View>
-                </View>
+                  {(v.firstName + " " + v.lastName).slice(0, 12)}
+                  {(v.firstName + " " + v.lastName).length > 12 ? "..." : ""}
+                </Text>
+                <Text className="text-gray-600 text-sm ml-3">{v.phone}</Text>
+              </View>
+            </View>
 
                 <View className="flex-row space-x-2">
 
@@ -303,7 +305,7 @@ export default function MyVolunteers() {
                 </View>
 
               </View>
-            ))}
+          )})}
 
           {/* Loading More Spinner */}
           {loadingMore && (

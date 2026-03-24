@@ -1,5 +1,5 @@
 // screens/Logs.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { getLogs, clearLogs, updateLogStatus } from "../../components/LogsHelpers";
 import { useNavigation } from '@react-navigation/native';
@@ -10,6 +10,7 @@ export default function Logs() {
   const [items, setItems] = useState([]);
   const navigation = useNavigation();
   const [isSynced, setIsSynced] = useState(false);
+  const syncingRef = useRef(false);
 
   useEffect(() => {
     loadLogs();
@@ -23,6 +24,24 @@ export default function Logs() {
       }
     }
   }, [items])
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (syncingRef.current) return;
+      const pending = items && items?.some(item => item.status === 'pending');
+      if (!pending) return;
+      try {
+        syncingRef.current = true;
+        await CRUDAPI.ping();
+        await SyncNow();
+      } catch {
+        // offline or server not reachable
+      } finally {
+        syncingRef.current = false;
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [items]);
 
   const loadLogs = async () => {
     const logs = await getLogs();

@@ -117,8 +117,7 @@ const ListVoter = () => {
             onPress={() => (navigation as any).navigate("Voter Info", { voter: item, booth: item.boothInfo })}
             className="border border-black p-4 rounded-2xl mb-5"
         >
-            <View className="flex-row justify-between mb-2">
-                <Text className="font-bold text-lg text-black">{item.voterId}</Text>
+            <View className="flex-row justify-end mb-2">
                 <Text className="font-bold text-lg text-black">{item.epicNo}</Text>
             </View>
 
