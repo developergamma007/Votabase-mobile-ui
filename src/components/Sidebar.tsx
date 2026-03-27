@@ -34,6 +34,7 @@ export default function SidebarModal({ visible, onClose }) {
         { label: "Home", icon: "home-outline", action: () => { } },
         { label: "Add Volunteer", icon: "person-add-outline", action: () => navigation.navigate("addVolunteer") },
         { label: "My Volunteers", icon: "people-outline", action: () => navigation.navigate("myVolunteers") },
+        { label: "Volunteer Analysis", icon: "bar-chart-outline", action: () => navigation.navigate("volunteerAnalysis") },
         { label: "Logs", icon: "document-text-outline", action: () => navigation.navigate("Logs") },
         { label: "Settings", icon: "settings-outline", action: () => navigation.navigate("Settings") },
         { label: "Exit", icon: "exit-outline", action: logout },

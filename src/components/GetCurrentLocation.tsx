@@ -4,12 +4,20 @@ import Geolocation from 'react-native-geolocation-service';
 
 const requestLocationPermission = async () => {
     if (Platform.OS === 'ios') {
-        return true;
+        try {
+            const status = await Geolocation.requestAuthorization('whenInUse');
+            return status === 'granted';
+        } catch {
+            return false;
+        }
     }
-    const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-    );
-    return granted === PermissionsAndroid.RESULTS.GRANTED;
+    const result = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
+    ]);
+    const fine = result[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] === PermissionsAndroid.RESULTS.GRANTED;
+    const coarse = result[PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION] === PermissionsAndroid.RESULTS.GRANTED;
+    return fine || coarse;
 };
 
 export const GetCurrentLocation = async () => {

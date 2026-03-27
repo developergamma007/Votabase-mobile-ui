@@ -387,6 +387,21 @@ export const CRUDAPI = {
             throw error;
         }
     },
+    fetchVolunteerAnalysis: async (force = false) => {
+        try {
+            if (!force) {
+                const cached = await getCached('volunteer_analysis');
+                if (cached) return cached;
+            }
+            const response = await apiClient.get('/votebase/v1/api/volunteers/analysis');
+            const data = response.data;
+            await setCached('volunteer_analysis', data);
+            return data;
+        } catch (error) {
+            console.log('Error while fetching volunteer analysis:', error.response?.data || error.message);
+            throw error;
+        }
+    },
     ping: async () => {
         try {
             const response = await apiClient.get('/votebase/v1/api/user/profile');

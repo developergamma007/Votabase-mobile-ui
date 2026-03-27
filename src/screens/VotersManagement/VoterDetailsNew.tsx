@@ -414,6 +414,10 @@ export default function VoterInfo() {
 
     const fetchLocation = async () => {
         const loc = await GetCurrentLocation();
+        if (!loc) {
+            showBanner("error", "Location permission not granted. You can continue without it.");
+            return;
+        }
         setLocation(loc);
     };
 

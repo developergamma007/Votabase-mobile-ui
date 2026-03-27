@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Settings from '../screens/Settings';
 import AddVolunteer from '../screens/VolunteersManagement/AddVolunteer';
 import MyVolunteers from '../screens/VolunteersManagement/MyVolunteers';
+import VolunteerAnalysis from '../screens/VolunteersManagement/VolunteerAnalysis';
 import BoothForFamily from '../screens/FamilyManagement/BoothSelectionToGetFamilies';
 import Families from '../screens/FamilyManagement/FamiliesInParticularBooth';
 import { bgColors } from '../constants/colors';
@@ -117,6 +118,7 @@ export default function AppStack() {
         <Stack.Screen name="Settings" component={Settings} options={{ title: "Settings", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
         <Stack.Screen name="addVolunteer" component={AddVolunteer} options={{ title: "Add Volunteer", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
         <Stack.Screen name="myVolunteers" component={MyVolunteers} options={{ title: "My Volunteers", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
+        <Stack.Screen name="volunteerAnalysis" component={VolunteerAnalysis} options={{ title: "Volunteer Analysis", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
         <Stack.Screen name="addFamilyDetails" component={AddFamilyDetails} options={{ title: "Voter's Family", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
         <Stack.Screen name="boothForFamily" component={BoothForFamily} options={{ title: "Select Booth", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
         <Stack.Screen name="families" component={Families} options={{ title: "Families", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
