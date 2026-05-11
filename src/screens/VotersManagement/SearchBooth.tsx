@@ -1,86 +1,146 @@
-// Dashboard.js
-import React, { useEffect, useState } from 'react';
-import { View, TextInput, TouchableOpacity, Text, FlatList, ActivityIndicator } from 'react-native';
-// import boothData from '../Json/dummyBooth.json'
+import React, { useEffect, useState, useMemo } from 'react';
+import { View, TextInput, TouchableOpacity, Text, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import DropDownPicker from 'react-native-dropdown-picker';
+import { ScrollView } from 'react-native-gesture-handler';
+import LinearGradient from 'react-native-linear-gradient';
 import { bgColors } from '../../constants/colors';
-import { CRUDAPI } from '../../apis/Api';
+import { CRUDAPI, getAssemblyCode } from '../../apis/Api';
 
 export default function SearchBooth() {
+  const navigation = useNavigation();
   const BOOTH_CACHE_KEY = 'boothSnapshotLite';
 
   const [search, setSearch] = useState('');
-  const [assemblyData, setAssemblyData] = useState([]);
+  const [assemblyData, setAssemblyData] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [loadingBoothId, setLoadingBoothId] = useState(null);
-  const navigation = useNavigation();
+  const [loadingBoothId, setLoadingBoothId] = useState<any>(null);
+
+  const [openAsm, setOpenAsm] = useState(false);
+  const [asmItems, setAsmItems] = useState([]);
+  const [selectedAsm, setSelectedAsm] = useState('');
+
+  const [openWard, setOpenWard] = useState(false);
+  const [wardItems, setWardItems] = useState([{ label: 'ALL', value: 'ALL' }]);
+  const [selectedWard, setSelectedWard] = useState('ALL');
 
   const loadData = async () => {
     try {
       const jsonValue = await AsyncStorage.getItem(BOOTH_CACHE_KEY);
-      if (!jsonValue) {
-        console.log('⚠️ No data in storage');
-        return null;
-      }
-      const parsed = JSON.parse(jsonValue);
-      setAssemblyData(parsed);
-      return [];
+      if (!jsonValue) return;
+      setAssemblyData(JSON.parse(jsonValue));
     } catch (error) {
       console.error('Error reading data', error);
-      return [];
     }
   };
 
-  const fetchSnapshotFromApi = async () => {
+  const fetchAssemblies = async () => {
+    try {
+      const res = await CRUDAPI.getAssemblyDropdown();
+      if (res?.data?.result) {
+        setAsmItems(res.data.result.map(a => ({
+          label: `${a.name} (${a.id})`,
+          value: a.code?.length || String(a.id)
+        })));
+      }
+    } catch (err) {
+      console.log("Failed to fetch assemblies", err);
+    }
+  };
+
+  const fetchSnapshotFromApi = async (asmCode) => {
     setLoading(true);
     setLoadError('');
     try {
-      const response = await CRUDAPI.loadDataLite();
+      const response = await CRUDAPI.loadDataLite(asmCode);
       const snapshotResult = response?.data?.result;
+      if (!snapshotResult) throw new Error('Snapshot data not found');
 
-      if (!snapshotResult) {
-        throw new Error('Snapshot data not found');
-      }
-
+      let finalData;
       if (typeof snapshotResult === 'string') {
         const resp = await fetch(snapshotResult);
-        if (!resp.ok) throw new Error(`Snapshot link fetch failed: ${resp.status}`);
-        const snapshotJson = await resp.json();
-        setAssemblyData(snapshotJson);
-        await AsyncStorage.setItem(BOOTH_CACHE_KEY, JSON.stringify(snapshotJson));
+        finalData = await resp.json();
       } else {
-        setAssemblyData(snapshotResult);
-        await AsyncStorage.setItem(BOOTH_CACHE_KEY, JSON.stringify(snapshotResult));
+        finalData = snapshotResult;
       }
+      setAssemblyData(finalData);
+      await AsyncStorage.setItem(BOOTH_CACHE_KEY, JSON.stringify(finalData));
     } catch (error) {
-      console.log('Error fetching snapshot from API, falling back to local cache:', error);
+      console.log('Error fetching snapshot from API:', error);
       await loadData();
-      setLoadError('Failed to fetch latest snapshot. Showing local data if available.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchSnapshotFromApi();
+    const init = async () => {
+      const current = await getAssemblyCode();
+      setSelectedAsm(current);
+      await fetchAssemblies();
+      await fetchSnapshotFromApi(current);
+    };
+    init();
   }, []);
 
-  const allBooths = assemblyData?.assembly && assemblyData?.assembly?.wards?.flatMap(ward =>
-    (ward.booths || []).map(booth => ({
-      ...booth,
-      boothId: booth.boothId ?? booth.id ?? booth.booth_no,
-      boothNameEn: booth.boothNameEn ?? booth.nameEn ?? booth.booth_add_en ?? '',
-      boothNameLocal: booth.boothNameLocal ?? booth.nameLocal ?? booth.booth_add_local ?? '',
-      voters: booth.voters || [],
-      wardId: ward.wardId ?? ward.id ?? ward.ward_id,
-      wardNameEn: ward.wardNameEn ?? ward.nameEn ?? ward.ward_name_en,
-      wardNameLocal: ward.wardNameLocal ?? ward.nameLocal ?? ward.ward_name_local
-    }))
-  );
+  useEffect(() => {
+    const asm = assemblyData?.assembly || assemblyData;
+    const wards = asm?.wards || [];
+    if (wards.length > 0) {
+      const items = [{ label: 'ALL', value: 'ALL' }];
+      wards.forEach((w: any) => {
+        items.push({
+          label: w.wardNameEn || `Ward ${w.wardId}`,
+          value: String(w.wardId)
+        });
+      });
+      setWardItems(items);
+    }
+  }, [assemblyData]);
+
+  const summaryStats = useMemo(() => {
+    const asm = assemblyData?.assembly || assemblyData;
+    const wards = asm?.wards || [];
+    let totalBooths = 0;
+    let totalVoters = 0;
+    let totalMale = 0;
+    let totalFemale = 0;
+
+    wards.forEach((w: any) => {
+      (w.booths || []).forEach((b: any) => {
+        const s = b.voterStats || {};
+        totalBooths += 1;
+        totalVoters += s.total || 0;
+        totalMale += s.male || 0;
+        totalFemale += s.female || 0;
+      });
+    });
+
+    return { totalWards: wards.length, totalBooths, totalVoters, totalMale, totalFemale };
+  }, [assemblyData]);
+
+  const allBooths = useMemo(() => {
+    const asm = assemblyData?.assembly || assemblyData;
+    const wards = asm?.wards || [];
+    return wards.flatMap((ward: any) =>
+      (ward.booths || []).map((booth: any) => ({
+        ...booth,
+        boothId: booth.boothId ?? booth.id ?? booth.booth_no,
+        boothNameEn: booth.boothNameEn ?? booth.nameEn ?? booth.booth_add_en ?? '',
+        boothNameLocal: booth.boothNameLocal ?? booth.nameLocal ?? booth.booth_add_local ?? '',
+        voters: booth.voters || [],
+        wardId: ward.wardId ?? ward.id ?? ward.ward_id,
+        wardNameEn: ward.wardNameEn ?? ward.nameEn ?? ward.ward_name_en,
+      }))
+    );
+  }, [assemblyData]);
+
 
   const filteredData = (allBooths || []).filter((item) => {
+    if (selectedWard !== 'ALL' && String(item.wardId) !== selectedWard) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
     const haystack = `${item.boothNameEn || ''} ${item.boothNameLocal || ''} ${item.boothId || ''}`.toLowerCase();
@@ -103,85 +163,208 @@ export default function SearchBooth() {
       const response = await CRUDAPI.fetchBoothVoters(booth.boothId);
       const boothPayload = response?.data?.result;
       if (boothPayload) {
-        navigation.navigate("Voter List", { booth: boothPayload });
+        navigation.navigate("Search Voter", { booth: boothPayload });
         return;
       }
-      navigation.navigate("Voter List", { booth });
+      navigation.navigate("Search Voter", { booth });
     } catch (error) {
       console.log('Failed to fetch booth voters, opening cached booth data:', error?.message || error);
-      navigation.navigate("Voter List", { booth });
+      navigation.navigate("Search Voter", { booth });
     } finally {
       setLoadingBoothId(null);
     }
   };
 
+  const renderSummaryCard = (label, value, color) => (
+    <View style={styles.summaryCard}>
+      <Text style={[styles.summaryLabel, { color }]}>{label.toUpperCase()}</Text>
+      <Text style={styles.summaryValue}>{value.toLocaleString()}</Text>
+    </View>
+  );
+
   return (
-    <View className={`flex-1 ${bgColors.gray100} px-4 pt-4`}>
-      <TextInput
-        className="border border-gray-300 rounded-lg px-4 py-3 mb-4 text-black"
-        placeholder="Search"
-        placeholderTextColor="#999"
-        value={search}
-        onChangeText={setSearch} // Update search state
-      />
+    <View style={styles.container}>
+      {/* Context - Persistent */}
+      <View style={styles.contextHeader}>
+        <View style={styles.contextRow}>
+          <Text style={styles.contextLabel}>CONTEXT</Text>
+          <View style={{ flex: 1 }}>
+            <DropDownPicker
+              open={openAsm}
+              value={selectedAsm}
+              items={asmItems}
+              setOpen={setOpenAsm}
+              setValue={setSelectedAsm}
+              onSelectItem={(item) => fetchSnapshotFromApi(item.value)}
+              placeholder="Select Assembly"
+              style={styles.dropdown}
+              dropDownContainerStyle={styles.dropdownPanel}
+              listMode="SCROLLVIEW"
+            />
+          </View>
+        </View>
+      </View>
+
       <FlatList
         data={filteredData}
         keyExtractor={(item) => String(item.boothId)}
-        showsVerticalScrollIndicator={true}
-        renderItem={({ item: booth }) => (
-          <TouchableOpacity
-            className={` border ${bgColors.white} rounded-2xl mb-3 p-3 shadow-sm`}
-            onPress={() => openBooth(booth)}
-          >
-            {/* Booth Title */}
-            <Text className="text-base font-semibold text-black">
-              {booth.boothId}
-              {booth.boothNameEn ? ` - ${booth.boothNameEn}` : ''}
-              {booth.boothNameEn || booth.boothNameLocal ? '.' : ''}
-            </Text>
-            {booth.voters && (
-              <View className="flex-row flex-wrap items-center mt-1">
-                {(() => {
-                  const stats = getBoothStats(booth);
-                  return (
-                    <>
-                      <Text className="text-sm text-gray-800 mr-1">Total Voters:</Text>
-                      <Text className="font-bold text-black mr-3">{stats.total}</Text>
-                      <Text className="text-sm text-gray-800 mr-1">Male:</Text>
-                      <Text className="font-bold text-black mr-3">{stats.male}</Text>
-                      <Text className="text-sm text-gray-800 mr-1">Female:</Text>
-                      <Text className="font-bold text-black">{stats.female}</Text>
-                    </>
-                  );
-                })()}
-                {loadingBoothId === booth.boothId && (
-                  <ActivityIndicator size="small" style={{ marginLeft: 8 }} />
-                )}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          <View>
+            <View style={[styles.searchSection, { zIndex: 1000 }]}>
+              <View style={styles.searchInputWrap}>
+                <Ionicons name="search-outline" size={20} color="#999" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search booth name or booth number"
+                  placeholderTextColor="#94A3B8"
+                  value={search}
+                  onChangeText={setSearch}
+                />
               </View>
 
-            )}
-          </TouchableOpacity>
-        )}
-        ListEmptyComponent={
-          loading ? (
-            <View className="items-center mt-8">
-              <ActivityIndicator size="small" />
-              <Text className="text-center text-gray-500 mt-3">Loading booths...</Text>
+              <View style={{ marginTop: 12, zIndex: 1000 }}>
+                <DropDownPicker
+                  open={openWard}
+                  value={selectedWard}
+                  items={wardItems}
+                  setOpen={setOpenWard}
+                  setValue={setSelectedWard}
+                  placeholder="Select Ward"
+                  style={styles.dropdown}
+                  dropDownContainerStyle={[styles.dropdownPanel, { zIndex: 5000 }]}
+                  listMode="SCROLLVIEW"
+                />
+              </View>
             </View>
-          ) : (
-            <View>
-              {!!loadError && (
-                <Text className="text-center text-red-500 mt-4 px-4">
-                  {loadError}
+
+            {/* Summary Grid */}
+            <View style={styles.summaryGrid}>
+              <View style={styles.summaryRow}>
+                {renderSummaryCard('Total Wards', summaryStats.totalWards, '#3B82F6')}
+                {renderSummaryCard('Total Booths', summaryStats.totalBooths, '#000')}
+              </View>
+              <View style={styles.summaryRow}>
+                {renderSummaryCard('Total Voters', summaryStats.totalVoters, '#000')}
+                {renderSummaryCard('Male Voters', summaryStats.totalMale, '#3B82F6')}
+              </View>
+              <View style={styles.summaryRow}>
+                {renderSummaryCard('Female Voters', summaryStats.totalFemale, '#D946EF')}
+                <View style={{ flex: 1 }} />
+              </View>
+            </View>
+          </View>
+        }
+        renderItem={({ item: booth }) => {
+          const stats = getBoothStats(booth);
+          return (
+            <TouchableOpacity
+              style={styles.boothCard}
+              onPress={() => openBooth(booth)}
+            >
+              <View style={styles.cardAccent} />
+              <View style={styles.cardBody}>
+                <Text style={styles.boothTitle}>
+                  {booth.boothId} - {booth.boothNameEn || booth.boothNameLocal}
                 </Text>
-              )}
-              <Text className="text-center text-gray-500 mt-5">
-                No booths found.
-              </Text>
-            </View>
-          )
+                <View style={styles.statsRow}>
+                  <View style={[styles.statPill, { backgroundColor: '#EEF2FF' }]}>
+                    <Text style={styles.pillLabel}>Total Voters <Text style={styles.pillValue}>{stats.total}</Text></Text>
+                  </View>
+                  <View style={[styles.statPill, { backgroundColor: '#E0F2FE' }]}>
+                    <Text style={styles.pillLabel}>Male <Text style={styles.pillValue}>{stats.male}</Text></Text>
+                  </View>
+                  <View style={[styles.statPill, { backgroundColor: '#FDF2F8' }]}>
+                    <Text style={styles.pillLabel}>Female <Text style={styles.pillValue}>{stats.female}</Text></Text>
+                  </View>
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            {loading ? <ActivityIndicator size="large" color="#3B82F6" /> : <Text style={styles.emptyText}>No booths found.</Text>}
+          </View>
         }
       />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  contextHeader: { padding: 16, paddingBottom: 10, zIndex: 3000, backgroundColor: '#F8FAFC' },
+  contextRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  contextLabel: { fontSize: 12, fontWeight: '800', color: '#64748B', marginRight: 15 },
+  dropdown: { borderColor: '#E2E8F0', borderRadius: 8, minHeight: 40 },
+  dropdownPanel: { borderColor: '#E2E8F0' },
+
+  listContent: { padding: 16, paddingTop: 0 },
+  searchSection: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  searchInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+  },
+  searchInput: { flex: 1, height: 45, color: '#1E293B', marginLeft: 8 },
+
+  summaryGrid: { marginBottom: 16 },
+  summaryRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  summaryLabel: { fontSize: 10, fontWeight: '800', marginBottom: 4 },
+  summaryValue: { fontSize: 20, fontWeight: 'bold', color: '#0F172A' },
+
+  boothCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  cardAccent: { width: 4, backgroundColor: '#0EA5E9' },
+  cardBody: { flex: 1, padding: 16 },
+  boothTitle: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 12 },
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  statPill: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
+  pillLabel: { fontSize: 12, color: '#475569' },
+  pillValue: { fontWeight: 'bold', color: '#1E293B' },
+
+  emptyContainer: { alignItems: 'center', marginTop: 40 },
+  emptyText: { color: '#64748B', fontSize: 14 },
+});

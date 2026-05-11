@@ -18,6 +18,7 @@ import { bgColors } from "../../constants/colors";
 import { GetCurrentLocation } from "../../components/GetCurrentLocation";
 import DropDownPicker from "react-native-dropdown-picker";
 import { Platform } from "react-native";
+import { PrinterHelper } from "../../components/PrinterHelper";
 
 export default function VoterInfo() {
     const route = useRoute();
@@ -31,6 +32,8 @@ export default function VoterInfo() {
     const [language, setLanguage] = useState("en");
     const [openDropdown, setOpenDropdown] = useState(null);
     const [govtSchemeItems, setGovtSchemeItems] = useState<Array<{ label: string, value: string }>>([]);
+    const [pollDayEnabled, setPollDayEnabled] = useState(false);
+    const [printTemplate, setPrintTemplate] = useState(null);
     const presentAddressRef = useRef<TextInput>(null);
     const [form, setForm] = useState({
         mobile: "",
@@ -396,6 +399,16 @@ export default function VoterInfo() {
             });
             const lang = await AsyncStorage.getItem("app_language");
             setLanguage(lang)
+            
+            // Poll Day Activation check
+            const code = await CRUDAPI.getAssemblyCode ? await CRUDAPI.getAssemblyCode() : (voter.assemblyCode || '000000000151');
+            CRUDAPI.fetchPollDayConfig(code).then(config => {
+                setPollDayEnabled(config?.enabled || false);
+            }).catch(() => setPollDayEnabled(false));
+
+            CRUDAPI.fetchMessageTemplate(voter.wardCode || booth?.wardId, 'PRINT').then(res => {
+                setPrintTemplate(res?.data?.result || res?.result || res || {});
+            }).catch(() => setPrintTemplate(null));
         };
 
         loadUpdatedVoter();
@@ -561,6 +574,7 @@ Bengaluru Central Parliamentary Constituency
                     value={maskValue(form[key], key)}
                     keyboardType={key === "mobile" ? "number-pad" : "default"}
                     placeholder={label}
+                    placeholderTextColor="#94A3B8"
                     maxLength={key === "mobile" ? 10 : 50}
                     className="border border-gray-300 rounded-xl px-4 py-3 bg-[#E3EDF3] text-black"
                     onChangeText={(text) => handleChange(key, text)}
@@ -683,7 +697,7 @@ Bengaluru Central Parliamentary Constituency
                     {isOthersSelected && (
                         <TextInput
                             placeholder={`Enter your ${label.toLowerCase()}`}
-                            placeholderTextColor="#888"
+                            placeholderTextColor="#94A3B8"
                             value={customValues[key] || ""}
                             onChangeText={(text) =>
                                 setCustomValues((prev) => ({
@@ -762,7 +776,7 @@ Bengaluru Central Parliamentary Constituency
                 {form[key] === "Others" && (
                         <TextInput
                             placeholder={`Enter your ${label.toLowerCase()}`}
-                            placeholderTextColor="#888"
+                            placeholderTextColor="#94A3B8"
                             value={customValues[key] || ""}
                             onChangeText={(text) =>
                                 setCustomValues((prev) => ({
@@ -1089,18 +1103,20 @@ Bengaluru Central Parliamentary Constituency
                             <DropDownPicker
                                 open={openDropdown === "status"}
                                 value={form.status}
-                                items={dropdownOptions.status?.map((item) => ({
-                                    label: item,
-                                    value: item,
-                                })) || []}
-                                setOpen={(isOpen) =>
-                                    setOpenDropdown(isOpen ? "status" : null)
-                                }
-                                listMode={Platform.OS === "android" ? "MODAL" : "SCROLLVIEW"}
                                 setValue={(callback) => {
                                     const value = callback(form.status);
                                     handleChange("status", value);
                                 }}
+                                items={[
+                                    ...(dropdownOptions.status?.map((item) => ({
+                                        label: item,
+                                        value: item,
+                                    })) || []),
+                                    ...(pollDayEnabled ? [
+                                        { label: "VOTED", value: "VOTED" },
+                                        { label: "NOT VOTED", value: "NOT VOTED" }
+                                    ] : [])
+                                ]}
                                 placeholder="Select Availability"
                                 style={{
                                     backgroundColor: "#E3EDF3",
@@ -1230,6 +1246,13 @@ Bengaluru Central Parliamentary Constituency
             </View>
             <View className="flex-row justify-between mt-5 mb-5 mx-5">
                 <TouchableOpacity
+                    onPress={async () => {
+                        const slip = PrinterHelper.formatVoterSlip(selectedVoter, booth, printTemplate);
+                        const connected = await AsyncStorage.getItem('connectedPrinter');
+                        const printer = connected ? JSON.parse(connected) : null;
+                        const success = await PrinterHelper.performPrint(printer, slip);
+                        if (success) showBanner("success", "Print command sent!");
+                    }}
                     className={`flex-1  py-3 rounded-xl mr-2  ${bgColors.blue600}`}
                 >
                     <Text className="text-white font-semibold text-center">Voter Slip Print</Text>

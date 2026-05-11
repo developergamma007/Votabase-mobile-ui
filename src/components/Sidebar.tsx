@@ -8,12 +8,12 @@ import {
     Pressable,
     Dimensions,
     Modal,
+    StyleSheet,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
-import { bgColors } from '../constants/colors';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import LinearGradient from 'react-native-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
@@ -31,91 +31,191 @@ export default function SidebarModal({ visible, onClose }) {
     }, [visible]);
 
     const menuItems = [
-        { label: "Home", icon: "home-outline", action: () => { } },
-        { label: "Add Volunteer", icon: "person-add-outline", action: () => navigation.navigate("addVolunteer") },
-        { label: "My Volunteers", icon: "people-outline", action: () => navigation.navigate("myVolunteers") },
-        { label: "Volunteer Analysis", icon: "bar-chart-outline", action: () => navigation.navigate("volunteerAnalysis") },
-        { label: "Logs", icon: "document-text-outline", action: () => navigation.navigate("Logs") },
-        { label: "Settings", icon: "settings-outline", action: () => navigation.navigate("Settings") },
-        { label: "Exit", icon: "exit-outline", action: logout },
-    ].filter(Boolean);;
+        { label: "Home", icon: "home-outline", action: () => { onClose(); navigation.navigate("Home" as any); } },
+        { label: "Add Volunteer", icon: "person-add-outline", action: () => { onClose(); navigation.navigate("addVolunteer" as any); } },
+        { label: "My Volunteers", icon: "people-outline", action: () => { onClose(); navigation.navigate("myVolunteers" as any); } },
+        { label: "Volunteer Analysis", icon: "bar-chart-outline", action: () => { onClose(); navigation.navigate("volunteerAnalysis" as any); } },
+        { label: "Logs", icon: "document-text-outline", action: () => { onClose(); navigation.navigate("Logs" as any); } },
+        { label: "Settings", icon: "settings-outline", action: () => { onClose(); navigation.navigate("Settings" as any); } },
+        { label: "Exit", icon: "exit-outline", action: logout, isExit: true },
+    ];
 
     return (
         <Modal transparent visible={visible} animationType="none">
-            <Pressable
-                className={`flex-1 ${bgColors.black30}`}
-                onPress={onClose}
-                style={{ height: height / 2 }}
-            />
-            <Animated.View
-                style={{
-                    transform: [{ translateX: slideAnim }],
-                    width: "100%",
-                }}
-                className="absolute left-0 top-32 w-full h-full"
-            >
-                <View
-                    style={{
-                        backgroundColor: '#0E88C6',
-                        padding: 25,
-                        borderRadius: 25,
-                        overflow: 'hidden',
-                        shadowColor: '#000',
-                        shadowOpacity: 0.2,
-                        shadowRadius: 18,
-                        shadowOffset: { height: 10 },
-                        height: '100%',
-                    }}
+            <View style={styles.container}>
+                <Pressable style={styles.backdrop} onPress={onClose} />
+                
+                <Animated.View
+                    style={[
+                        styles.sidebar,
+                        { transform: [{ translateX: slideAnim }] }
+                    ]}
                 >
-                    {/* Header */}
-                    <TouchableOpacity onPress={onClose} className='flex-row mb-5'>
-                        <Ionicons name="chevron-back" size={26} color="white" />
-                        <Text className="text-white text-2xl font-semibold">Go back</Text>
-                    </TouchableOpacity>
-                    <View
-                        style={{
-                            backgroundColor: '#086C94',
-                            paddingVertical: 20,
-                            borderRadius: 20,
-                            marginTop: 70,
-                        }}
+                    <LinearGradient
+                        colors={["#0F172A", "#1E293B"]}
+                        style={styles.gradient}
                     >
-
-                        {menuItems.map((item, index) => (
-                            <TouchableOpacity
-                                key={index}
-                                className="flex-row items-center px-6 py-5 border-b border-white/10"
-                                onPress={() => {
-                                    item.action();
-                                    setSidebarVisible(false);
-                                }}
-                            >
-                                {/* Icon Box */}
-                                <View
-                                    style={{
-                                        width: 38,
-                                        height: 38,
-                                        borderRadius: 8,
-                                        marginRight: 20,
-                                        justifyContent: 'center',
-                                        alignItems: 'center',
-                                    }}
-                                >
-                                    <Ionicons
-                                        name={item.icon}
-                                        size={22}
-                                        color="white"
-                                        style={{ opacity: 1 }}
-                                    />
-                                </View>
-
-                                <Text className="text-white text-lg">{item.label}</Text>
+                        {/* Sidebar Header */}
+                        <View style={styles.header}>
+                            <View style={styles.profileCircle}>
+                                <Text style={styles.profileInitial}>
+                                    {(userInfo as any)?.name?.charAt(0) || 'U'}
+                                </Text>
+                            </View>
+                            <View style={styles.headerInfo}>
+                                <Text style={styles.userName}>{(userInfo as any)?.name || 'User'}</Text>
+                                <Text style={styles.userRole}>Volunteer Access</Text>
+                            </View>
+                            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                                <Ionicons name="close" size={24} color="#94A3B8" />
                             </TouchableOpacity>
-                        ))}
+                        </View>
 
-                    </View>
-                </View>
-            </Animated.View>
+                        <View style={styles.divider} />
+
+                        {/* Menu Items */}
+                        <View style={styles.menuContainer}>
+                            {menuItems.map((item, index) => (
+                                <TouchableOpacity 
+                                    key={index} 
+                                    style={[styles.menuItem, item.isExit && styles.exitItem]} 
+                                    onPress={item.action}
+                                >
+                                    <View style={[styles.iconBox, { backgroundColor: item.isExit ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255,255,255,0.05)' }]}>
+                                        <Ionicons 
+                                            name={item.icon} 
+                                            size={20} 
+                                            color={item.isExit ? '#EF4444' : '#fff'} 
+                                        />
+                                    </View>
+                                    <Text style={[styles.menuLabel, item.isExit && styles.exitLabel]}>
+                                        {item.label}
+                                    </Text>
+                                    {!item.isExit && <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.2)" />}
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        {/* Footer */}
+                        <View style={styles.footer}>
+                            <Text style={styles.versionText}>Votabase v2.0.4</Text>
+                        </View>
+                    </LinearGradient>
+                </Animated.View>
+            </View>
         </Modal>
     );
 }
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        flexDirection: 'row',
+    },
+    backdrop: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+    },
+    sidebar: {
+        width: width * 0.8,
+        height: '100%',
+        backgroundColor: '#0F172A',
+        shadowColor: "#000",
+        shadowOffset: { width: 10, height: 0 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        elevation: 20,
+    },
+    gradient: {
+        flex: 1,
+        paddingTop: 60,
+    },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        marginBottom: 20,
+    },
+    profileCircle: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: '#3B82F6',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 15,
+    },
+    profileInitial: {
+        color: '#fff',
+        fontSize: 20,
+        fontWeight: 'bold',
+    },
+    headerInfo: {
+        flex: 1,
+    },
+    userName: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    userRole: {
+        color: '#94A3B8',
+        fontSize: 12,
+        marginTop: 2,
+    },
+    closeBtn: {
+        padding: 5,
+    },
+    divider: {
+        height: 1,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        marginHorizontal: 20,
+        marginBottom: 20,
+    },
+    menuContainer: {
+        paddingHorizontal: 15,
+    },
+    menuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 10,
+        borderRadius: 12,
+        marginBottom: 8,
+    },
+    iconBox: {
+        width: 38,
+        height: 38,
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 15,
+    },
+    menuLabel: {
+        color: '#fff',
+        fontSize: 15,
+        fontWeight: '600',
+        flex: 1,
+    },
+    exitItem: {
+        marginTop: 20,
+    },
+    exitLabel: {
+        color: '#EF4444',
+    },
+    footer: {
+        position: 'absolute',
+        bottom: 30,
+        width: '100%',
+        alignItems: 'center',
+    },
+    versionText: {
+        color: 'rgba(255,255,255,0.3)',
+        fontSize: 10,
+        letterSpacing: 1,
+    }
+});

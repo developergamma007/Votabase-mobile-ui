@@ -9,7 +9,6 @@ import SearchVoter from '../screens/VotersManagement/SearchVoterNew';
 import { Text, TouchableOpacity, View } from 'react-native';
 import SidebarModal from '../components/Sidebar';
 import LoadData from '../screens/LoginManagement/LoadData';
-import ListVoter from '../screens/VotersManagement/VotersList';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
@@ -37,95 +36,160 @@ export default function AppStack() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
 
-  const HeaderGradient = ({
-    colors = ["#0C7BB3", "#0C7BB3"],
-    start = { x: 0, y: 0 },
-    end = { x: 1, y: 1 },
-  }) => {
-    return (
-      <LinearGradient
-        colors={colors}
-        start={start}
-        end={end}
-        style={{ flex: 1 }}
-      />
-    );
-  };
-  const HeaderLeft = ({ onPress }) => (
-    <TouchableOpacity onPress={onPress} style={{
-      width: 30,
-      height: 30,
-      borderRadius: 20,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginLeft: 3,
-    }}>
-      <Ionicons name="menu" size={30} color="black" />
+  const HeaderGradient = () => (
+    <LinearGradient
+      colors={["#0F172A", "#1E3A8A"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={{ flex: 1 }}
+    />
+  );
+
+  const HeaderLeft = ({ onPress }: any) => (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={{
+        width: 44,
+        height: 44,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 2,
+        marginTop: -2,
+        backgroundColor: 'transparent',
+      }}
+    >
+      <Ionicons name="menu-outline" size={28} color="#FFFFFF" />
     </TouchableOpacity>
   );
 
   const HeaderProfile = () => (
-    <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={{ marginLeft: 2 }}>
-      <Ionicons name="person-circle-outline" size={32} color="black" />
+    <TouchableOpacity
+      onPress={() => navigation.navigate('Profile' as never)}
+      activeOpacity={0.7}
+      style={{
+        width: 35,
+        height: 35,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 10,
+        marginTop: -2,
+        backgroundColor: 'transparent',
+      }}
+    >
+      <Ionicons name="person-outline" size={26} color="#FFFFFF" />
+    </TouchableOpacity>
+  );
+
+  const HeaderBack = () => (
+    <TouchableOpacity
+      onPress={() => navigation.goBack()}
+      activeOpacity={0.7}
+      style={{
+        width: 44,
+        height: 44,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 0,
+        marginTop: -2,
+        backgroundColor: 'transparent',
+      }}
+    >
+      <Ionicons name="chevron-back-outline" size={28} color="#FFFFFF" />
     </TouchableOpacity>
   );
 
   return (
     <>
-      {
-        <SidebarModal
-          visible={sidebarVisible}
-          onClose={() => setSidebarVisible(false)}
-        />
-      }
-      {banner.type && (
+      <SidebarModal
+        visible={sidebarVisible}
+        onClose={() => setSidebarVisible(false)}
+      />
+
+      {banner?.type && (
         <View
           style={{
             position: "absolute",
-            top: insets.top + 50, // 👈 adaptive spacing
-            left: 0,
-            right: 0,
-            height: 40,
-            zIndex: 50,
+            top: insets.top + 12,
+            left: 20,
+            right: 20,
+            backgroundColor: banner.type === "success" ? "#10B981" : "#EF4444",
+            borderRadius: 16,
+            paddingVertical: 14,
+            paddingHorizontal: 20,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.2,
+            shadowRadius: 20,
+            elevation: 10,
           }}
-          className={`
-          justify-center items-center
-          ${banner.type === "success" ? bgColors.green600 : bgColors.red600}
-          `}
-          >
-          <Text className="text-white text-center font-semibold px-4">
+        >
+          <Ionicons
+            name={banner.type === "success" ? "checkmark-circle" : "alert-circle"}
+            size={20}
+            color="#FFFFFF"
+            style={{ marginRight: 10 }}
+          />
+          <Text style={{
+            color: "#FFFFFF",
+            fontSize: 15,
+            fontWeight: "700",
+            textAlign: "center",
+          }}>
             {banner.message}
           </Text>
         </View>
-
       )}
-      <Stack.Navigator>
-        <Stack.Screen name="Load Data" component={LoadData} options={{ title: 'Load data', headerBackButtonDisplayMode: 'minimal' }} />
-        <Stack.Screen name="Home" component={LandingPage} options={{
-          title: 'Home',
-          headerBackVisible: false,
-          headerLeft: () => <HeaderLeft onPress={() => setSidebarVisible(true)} />,
+
+      <Stack.Navigator
+        screenOptions={{
           headerBackground: () => <HeaderGradient />,
-          headerRight: () => (<HeaderProfile />),
-          headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' }
-        }} />
-        <Stack.Screen name="Search Voter" component={SearchVoter} options={{ title: 'Search Voter', headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerRight: () => (<HeaderProfile />), headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="Search Booth" component={SearchBooth} options={{ title: 'Search Booth', headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerRight: () => (<HeaderProfile />), headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="Voter List" component={ListVoter} options={{ title: "Voters List", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerRight: () => (<HeaderProfile />), headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="Voter Info" component={VoterDetails} options={{ title: "Voter Info", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerRight: () => (<HeaderProfile />), headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="Profile" component={MyProfile} options={{ title: "Profile", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="Logs" component={Logs} options={{ title: "Logs", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="Settings" component={Settings} options={{ title: "Settings", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="addVolunteer" component={AddVolunteer} options={{ title: "Add Volunteer", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="myVolunteers" component={MyVolunteers} options={{ title: "My Volunteers", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="volunteerAnalysis" component={VolunteerAnalysis} options={{ title: "Volunteer Analysis", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="addFamilyDetails" component={AddFamilyDetails} options={{ title: "Voter's Family", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="boothForFamily" component={BoothForFamily} options={{ title: "Select Booth", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="families" component={Families} options={{ title: "Families", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="voterFamilyDetails" component={VoterFamilyDetails} options={{ title: "", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="meetings" component={Meetings} options={{ title: "Meetings", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="pollDay" component={PollDayVoters} options={{ title: "Poll Day", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
-        <Stack.Screen name="print" component={PrinterScreen} options={{ title: "Print", headerBackButtonDisplayMode: 'minimal', headerBackground: () => <HeaderGradient />, headerTintColor: "#fff", headerTitleAlign: "center", headerTitleStyle: { color: '#fff', fontWeight: 'bold' } }} />
+          headerStyle: { backgroundColor: 'transparent' },
+          headerTintColor: "#FFFFFF",
+          headerTitleAlign: "center",
+          headerTitleStyle: {
+            fontSize: 18,
+            fontWeight: '800',
+            letterSpacing: 0.5,
+          },
+          headerLeft: () => <HeaderBack />,
+          headerRight: () => <HeaderProfile />,
+          headerShadowVisible: false,
+        }}
+      >
+        <Stack.Screen
+          name="Load Data"
+          component={LoadData}
+          options={{ title: 'Sync Data', headerLeft: () => null }}
+        />
+        <Stack.Screen
+          name="Home"
+          component={LandingPage}
+          options={{
+            title: 'Dashboard',
+            headerLeft: () => <HeaderLeft onPress={() => setSidebarVisible(true)} />,
+          }}
+        />
+        <Stack.Screen name="Search Voter" component={SearchVoter} options={{ title: 'Search Voter' }} />
+        <Stack.Screen name="Search Booth" component={SearchBooth} options={{ title: 'Search Booth' }} />
+        <Stack.Screen name="Voter Info" component={VoterDetails} options={{ title: "Voter Profile" }} />
+        <Stack.Screen name="Profile" component={MyProfile} options={{ title: "My Profile", headerRight: () => null }} />
+        <Stack.Screen name="Logs" component={Logs} options={{ title: "Activity Logs" }} />
+        <Stack.Screen name="Settings" component={Settings} options={{ title: "App Settings" }} />
+        <Stack.Screen name="addVolunteer" component={AddVolunteer} options={{ title: "Add Volunteer" }} />
+        <Stack.Screen name="myVolunteers" component={MyVolunteers} options={{ title: "My Volunteers" }} />
+        <Stack.Screen name="volunteerAnalysis" component={VolunteerAnalysis} options={{ title: "Analysis" }} />
+        <Stack.Screen name="addFamilyDetails" component={AddFamilyDetails} options={{ title: "Family Details" }} />
+        <Stack.Screen name="boothForFamily" component={BoothForFamily} options={{ title: "Select Booth" }} />
+        <Stack.Screen name="families" component={Families} options={{ title: "Families List" }} />
+        <Stack.Screen name="voterFamilyDetails" component={VoterFamilyDetails} options={{ title: "Family Info" }} />
+        <Stack.Screen name="meetings" component={Meetings} options={{ title: "Meetings" }} />
+        <Stack.Screen name="pollDay" component={PollDayVoters} options={{ title: "Poll Day Control" }} />
+        <Stack.Screen name="print" component={PrinterScreen} options={{ title: "Thermal Print" }} />
       </Stack.Navigator>
     </>
   );
