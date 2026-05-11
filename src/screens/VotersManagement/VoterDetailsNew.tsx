@@ -7,8 +7,11 @@ import {
     TouchableOpacity,
     Alert,
     Linking,
+    Platform,
+    Image,
+    ActivityIndicator
 } from "react-native";
-import { useRoute } from "@react-navigation/native";
+
 import Ionicons from "react-native-vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CRUDAPI } from "../../apis/Api";
@@ -17,16 +20,16 @@ import { AuthContext } from "../../context/AuthContext";
 import { bgColors } from "../../constants/colors";
 import { GetCurrentLocation } from "../../components/GetCurrentLocation";
 import DropDownPicker from "react-native-dropdown-picker";
-import { Platform } from "react-native";
 import { PrinterHelper } from "../../components/PrinterHelper";
 
-export default function VoterInfo() {
-    const route = useRoute();
+export default function VoterInfo({ navigation, route }) {
     const { voter, booth } = route.params;
     const { setBanner } = useContext(AuthContext);
 
     const [activeTab, setActiveTab] = useState("PRIMARY");
-    const [location, setLocation] = useState(null);
+    const [location, setLocation] = useState(
+        voter?.latitude && voter?.longitude ? { latitude: voter.latitude, longitude: voter.longitude } : null
+    );
     const [selectedVoter, setSelectedVoter] = useState(voter || {});
     const [customValues, setCustomValues] = useState({});
     const [language, setLanguage] = useState("en");
@@ -34,1230 +37,442 @@ export default function VoterInfo() {
     const [govtSchemeItems, setGovtSchemeItems] = useState<Array<{ label: string, value: string }>>([]);
     const [pollDayEnabled, setPollDayEnabled] = useState(false);
     const [printTemplate, setPrintTemplate] = useState(null);
+    const [saving, setSaving] = useState(false);
+    
     const presentAddressRef = useRef<TextInput>(null);
+
     const [form, setForm] = useState({
-        mobile: "",
-        dob: "",
-        community: "",
-        caste: "",
-        motherTongue: "",
-        education: "",
-        residenceType: "",
-        ownership: "",
-        voterPoints: "",
-        govtSchemeTracking: [],
-        engagementPotential: 0,
-        ifShifted: "",
-        status: "",
-        civicIssue: "",
-        natureOfVoter: "",
-        notes: "",
-        presentAddress: "",
-        newWard: "",
-        newBoothNo: "",
-        newSerialNo: "",
-        notAvailableReason: "",
+        mobile: voter?.mobile || "",
+        dob: voter?.dob || "",
+        community: voter?.community || "",
+        caste: voter?.caste || "",
+        motherTongue: voter?.motherTongue || "",
+        education: voter?.education || "",
+        residenceType: voter?.residenceType || "",
+        ownership: voter?.ownership || "",
+        voterPoints: voter?.voterPoints || "",
+        govtSchemeTracking: Array.isArray(voter?.govtSchemeTracking) ? voter.govtSchemeTracking : (voter?.govtSchemeTracking ? [voter.govtSchemeTracking] : []),
+        engagementPotential: voter?.engagementPotential || "",
+        ifShifted: voter?.ifShifted || "",
+        status: voter?.status || "",
+        civicIssue: voter?.civicIssue || "",
+        natureOfVoter: voter?.natureOfVoter || "",
+        notes: voter?.notes || "",
+        presentAddress: voter?.presentAddress || "",
+        newWard: voter?.newWard || "",
+        newBoothNo: voter?.newBoothNo || "",
+        newSerialNo: voter?.newSerialNo || "",
+        notAvailableReason: voter?.notAvailableReason || "",
     });
 
-    const fields = [
-        { key: "mobile", label: "Mobile Number (10 Digits)" },
-        { key: "dob", label: "Date of Birth" },
-        { key: "caste", label: "Caste" },
-        { key: "community", label: "Community" },
-        { key: "civicIssue", label: "Civic Issues" },
-        { key: "natureOfVoter", label: "Nature (A/B/C/NA)" },
-        { key: "education", label: "Education" },
-        { key: "motherTongue", label: "Mother Tongue" },
-        { key: "residenceType", label: "Residence Type" },
-        { key: "ownership", label: "Ownership" },
-        { key: "voterPoints", label: "Voter Points" },
-        { key: "govtSchemeTracking", label: "Govt Scheme Tracking" },
-        { key: "status", label: "Availability" },
-        { key: "engagementPotential", label: "Engangement Potential" },
-        { key: "ifShifted", label: "If shifted - Transport & Booth Details" },
-    ];
-
-    const primaryKeys = [
-        "mobile",
-        "dob",
-        "caste",
-        "community",
-        "civicIssue",
-        "natureOfVoter",
-    ];
-
-    const additionalKeys = [
-        "education",
-        "motherTongue",
-        "residenceType",
-        "ownership",
-        "voterPoints",
-        "govtSchemeTracking",
-        "engagementPotential",
-        "ifShifted"
-    ];
-
-    const labels = {
-        name: { en: "Name", kn: "ಹೆಸರು" },
-        epicNo: { en: "EPIC / Voter ID", kn: "ಮತದಾರರ ಗುರುತು ಸಂಖ್ಯೆ" },
-        pollingBooth: { en: "Polling Booth", kn: "ಬೂತ್ ವಿವರಗಳು" },
+    const fieldLabels = {
+        mobile: "Mobile Number (10 Digits)",
+        dob: "Date of Birth",
+        caste: "Caste",
+        community: "Community",
+        civicIssue: "Civic Issues",
+        natureOfVoter: "Nature (A/B/C/NA)",
+        education: "Education",
+        motherTongue: "Mother Tongue",
+        residenceType: "Residence Type",
+        ownership: "Ownership",
+        voterPoints: "Voter Points",
+        govtSchemeTracking: "Govt Scheme Tracking",
+        engagementPotential: "Engagement Potential",
+        ifShifted: "If shifted - Transport & Booth Details",
+        status: "Availability",
+        notes: "ENTER NOTES"
     };
 
-    const sectionTitles = {
-        pollingBooth: { en: "Polling Booth", kn: "ಬೂತ್ ವಿವರಗಳು" },
-        voterInfo: { en: "Voter Information", kn: "ಮತದಾರ ಮಾಹಿತಿ" },
-    };
+    const primaryKeys = ["mobile", "dob", "caste", "community", "civicIssue", "natureOfVoter"];
+    const additionalKeys = ["education", "motherTongue", "residenceType", "ownership", "voterPoints", "govtSchemeTracking", "engagementPotential", "ifShifted"];
 
     const dropdownOptions = {
         community: ["Hindu", "Muslim", "Christian", "Sikh", "Jain", "Others"],
-        caste: [
-            "Lingayat",
-            "Vokkaliga",
-            "Brahmin",
-            "Yadava / Golla",
-            "Kuruba",
-            "Idiga / Billava",
-            "Vishwakarma",
-            "Devanga",
-            "Nayaka / Naik",
-            "Kumbara",
-            "Madivala / Dhobi",
-            "Uppara",
-            "Besta",
-            "Bhovi",
-            "Holeya",
-            "Madiga",
-            "Adi Karnataka",
-            "Lambani / Banjara",
-            "Soliga",
-            "Jenukuruba",
-            "Kadu Kuruba",
-            "Iruliga",
-            "Muslim",
-            "Christian",
-            "Jain",
-            "Bunt",
-            "Kodava",
-            "Maratha",
-            "Mogaveera",
-            "Tuluva",
-            "Others"
-        ],
-        motherTongue: [
-            "Kannada",
-            "Telugu",
-            "Tamil",
-            "Hindi",
-            "Urdu",
-            "Tulu",
-            "Malayalam",
-            "Konkani",
-            "Marathi",
-            "Lambani",
-            "Kodava",
-            "Sanskrit",
-            "Gujarati",
-            "Sindhi",
-            "Punjabi",
-            "Bengali",
-            "Odia",
-            "Others"
-        ],
-        education: [
-            "Illiterate",
-            "Primary School (1–5)",
-            "Middle School (6–8)",
-            "SSLC (10th Pass)",
-            "PUC (12th Pass)",
-            "Diploma",
-            "ITI",
-            "Undergraduate Degree",
-            "Postgraduate Degree",
-            "Professional Degree (BE, MBBS, CA, etc.)",
-            "PhD / Research",
-            "Others"
-        ],
-        residenceType: [
-            "Layout",
-            "Apartment",
-            "Villa",
-            "Independent House",
-            "Slum Area",
-            "Gated Community",
-            "Chawl / Line House",
-            "Row House",
-            "Quarters (Govt / Company)",
-            "Farm House",
-            "Others"
-        ],
-        ownership: [
-            "Own House",
-            "Rented House",
-            "Leased House",
-            "Relative’s House",
-            "Hostel / PG",
-            "Quarters (Government / Company)",
-            "Slum / Informal Housing",
-            "Homeless",
-            "Others"
-        ],
-        status: [
-            "None",
-            "Available",
-            "Shifted in the ward",
-            "Shifted outside the ward",
-            "Recommend shift to the new ward",
-            "Not available"],
-        civicIssue: [
-            "Road Damage / Potholes",
-            "Traffic Congestion",
-            "Water Supply Issues",
-            "Drinking Water Quality",
-            "Sewage / Drainage Problems",
-            "Stormwater Drain Overflow",
-            "Garbage Collection Issues",
-            "Waste Management / Dumping",
-            "Streetlight Not Working",
-            "Public Safety Issues",
-            "Law and Order Problems",
-            "Electricity Supply Issues",
-            "Lack of Public Transport",
-            "Bus Stop / Metro Issues",
-            "Park and Playground Issues",
-            "Health Facility Issues",
-            "Hospital / Primary Health Centre Issues",
-            "School / Education Issues",
-            "Encroachment Problems",
-            "Flooding During Rain",
-            "Pollution (Air / Water / Noise)",
-            "Mosquito Menace",
-            "Stray Dogs Issue",
-            "Property Tax / Documentation Issues",
-            "Lack of Government Services Access",
-            "Housing Problems / Slum Issues",
-            "Employment Issues",
-            "Price Rise / Inflation Issues",
-            "Corruption in Local Offices",
-            "Drain Cleaning Required",
-            "Footpath Encroachment / Bad Footpaths",
-            "Lake Pollution / Lake Encroachment",
-            "Ration Card Issues",
-            "Aadhaar / ID Documentation Issues",
-            "Women's Safety Issues",
-            "Senior Citizens Issues",
-            "Welfare Scheme Issues (Pension / Subsidy Delay)",
-            "Public Toilet Issues",
-            "Tree Fall / Tree Cutting Issues",
-            "Street Vendors Management Issue",
-            "Parking Problems",
-            "Borewell Issues",
-            "Road Widening / Infrastructure Issues",
-            "Others"
-        ],
+        caste: ["Lingayat", "Vokkaliga", "Brahmin", "Yadava / Golla", "Kuruba", "Idiga / Billava", "Vishwakarma", "Devanga", "Nayaka / Naik", "Kumbara", "Madivala / Dhobi", "Uppara", "Besta", "Bhovi", "Holeya", "Madiga", "Adi Karnataka", "Lambani / Banjara", "Soliga", "Jenukuruba", "Kadu Kuruba", "Iruliga", "Muslim", "Christian", "Jain", "Bunt", "Kodava", "Maratha", "Mogaveera", "Tuluva", "Others"],
+        motherTongue: ["Kannada", "Telugu", "Tamil", "Hindi", "Urdu", "Tulu", "Malayalam", "Konkani", "Marathi", "Lambani", "Kodava", "Sanskrit", "Gujarati", "Sindhi", "Punjabi", "Bengali", "Odia", "Others"],
+        education: ["Illiterate", "Primary School (1\u20135)", "Middle School (6\u20138)", "SSLC (10th Pass)", "PUC (12th Pass)", "Diploma", "ITI", "Undergraduate Degree", "Postgraduate Degree", "Professional Degree (BE, MBBS, CA, etc.)", "PhD / Research", "Others"],
+        residenceType: ["Layout", "Apartment", "Villa", "Independent House", "Slum Area", "Gated Community", "Chawl / Line House", "Row House", "Quarters (Govt / Company)", "Farm House", "Others"],
+        ownership: ["Own House", "Rented House", "Leased House", "Relative\u2019s House", "Hostel / PG", "Quarters (Government / Company)", "Slum / Informal Housing", "Homeless", "Others"],
+        status: ["None", "Available", "Shifted in the ward", "Shifted outside the ward", "Recommend shift to the new ward", "Not available"],
+        civicIssue: ["Road Damage / Potholes", "Traffic Congestion", "Water Supply Issues", "Drinking Water Quality", "Sewage / Drainage Problems", "Stormwater Drain Overflow", "Garbage Collection Issues", "Waste Management / Dumping", "Streetlight Not Working", "Public Safety Issues", "Law and Order Problems", "Electricity Supply Issues", "Lack of Public Transport", "Bus Stop / Metro Issues", "Park and Playground Issues", "Health Facility Issues", "Hospital / Primary Health Centre Issues", "School / Education Issues", "Encroachment Problems", "Flooding During Rain", "Pollution (Air / Water / Noise)", "Mosquito Menace", "Stray Dogs Issue", "Property Tax / Documentation Issues", "Lack of Government Services Access", "Housing Problems / Slum Issues", "Employment Issues", "Price Rise / Inflation Issues", "Corruption in Local Offices", "Drain Cleaning Required", "Footpath Encroachment / Bad Footpaths", "Lake Pollution / Lake Encroachment", "Ration Card Issues", "Aadhaar / ID Documentation Issues", "Women's Safety Issues", "Senior Citizens Issues", "Welfare Scheme Issues (Pension / Subsidy Delay)", "Public Toilet Issues", "Tree Fall / Tree Cutting Issues", "Street Vendors Management Issue", "Parking Problems", "Borewell Issues", "Road Widening / Infrastructure Issues", "Others"],
         natureOfVoter: ["A", "B", "C", "NA", "Others"],
-        voterPoints: [
-            "0.5", "1", "1.5", "2", "2.5", "3",
-            "3.5", "4", "4.5", "5", "5.5", "6",
-            "6.5", "7", "7.5", "8", "8.5", "9",
-            "9.5", "10", "Others"
-        ],
-        govtSchemeTracking: [
-            // Karnataka State Schemes
-            "Gruha Lakshmi (Household Cash Transfer)",
-            "Griha Jyothi (Electricity Subsidy)",
-            "Annabhagya (Food / Ration Support)",
-            "Shakti (Free / Concessional Bus Travel for Women)",
-            "Yuva Nidhi (Unemployed Youth Stipend & Skilling)",
-            "CM Kaushalya / Kaushalya Karnataka Yojane (Skill Training)",
-            "Nanna Guruthu (SC/ST Document Digitization)",
-            "ELEVATE (Startup Grant / Seed Funding)",
-            "Arogya Karnataka (State Health Scheme)",
-            "Grama Vikasa / Gramabhivruddi Programmes (Rural Development)",
-            "Soura Belaku (Rooftop Solar Subsidy)",
-            "Thayi Bhagya (Mother & Child / Girl Child Welfare)",
-            "Yuvanidhi / Youth Employment Schemes",
-            "Local District-Level Schemes",
-
-            // Central Government Schemes
-            "Pradhan Mantri Awas Yojana (PMAY – Urban / Gramin)",
-            "Mahatma Gandhi National Rural Employment Guarantee Act (MGNREGA)",
-            "Ayushman Bharat / PM-JAY (Health Insurance)",
-            "Jal Jeevan Mission (Piped Drinking Water)",
-            "Swachh Bharat Mission (Sanitation)",
-            "Pradhan Mantri Kisan Samman Nidhi (PM-KISAN)",
-            "Pradhan Mantri Fasal Bima Yojana (Crop Insurance)",
-            "Ujjwala Yojana (LPG Connections)",
-            "PM Surya / Rooftop Solar Subsidy",
-            "PM SVANidhi (Street Vendor Micro-Credit)",
-            "PM Kaushal Vikas Yojana (PMKVY / Skill India)",
-            "National Social Assistance Programme (Pensions)",
-            "Beti Bachao Beti Padhao",
-            "Atal Pension Yojana",
-            "National Scholarship / Scholarship Schemes",
-            "Others"
-        ],
-        engagementPotential: [
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9",
-            "10",
-            "Others"
-        ]
+        voterPoints: ["0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5", "5.5", "6", "6.5", "7", "7.5", "8", "8.5", "9", "9.5", "10", "Others"],
+        govtSchemeTracking: ["Gruha Lakshmi (Household Cash Transfer)", "Griha Jyothi (Electricity Subsidy)", "Annabhagya (Food / Ration Support)", "Shakti (Free / Concessional Bus Travel for Women)", "Yuva Nidhi (Unemployed Youth Stipend & Skilling)", "CM Kaushalya / Kaushalya Karnataka Yojane (Skill Training)", "Nanna Guruthu (SC/ST Document Digitization)", "ELEVATE (Startup Grant / Seed Funding)", "Arogya Karnataka (State Health Scheme)", "Grama Vikasa / Gramabhivruddi Programmes (Rural Development)", "Soura Belaku (Rooftop Solar Subsidy)", "Thayi Bhagya (Mother & Child / Girl Child Welfare)", "Yuvanidhi / Youth Employment Schemes", "Local District-Level Schemes", "Pradhan Mantri Awas Yojana (PMAY \u2013 Urban / Gramin)", "Mahatma Gandhi National Rural Employment Guarantee Act (MGNREGA)", "Ayushman Bharat / PM-JAY (Health Insurance)", "Jal Jeevan Mission (Piped Drinking Water)", "Swachh Bharat Mission (Sanitation)", "Pradhan Mantri Kisan Samman Nidhi (PM-KISAN)", "Pradhan Mantri Fasal Bima Yojana (Crop Insurance)", "Ujjwala Yojana (LPG Connections)", "PM Surya / Rooftop Solar Subsidy", "PM SVANidhi (Street Vendor Micro-Credit)", "PM Kaushal Vikas Yojana (PMKVY / Skill India)", "National Social Assistance Programme (Pensions)", "Beti Bachao Beti Padhao", "Atal Pension Yojana", "National Scholarship / Scholarship Schemes", "Others"],
+        engagementPotential: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Others"]
     };
 
     const handleChange = (key, value) => {
         setForm(prev => ({ ...prev, [key]: value }));
-        
-        // Focus present address input when "Shifted outside the ward" is selected
-        if (key === "status" && value === "Shifted outside the ward") {
-            setTimeout(() => {
-                presentAddressRef.current?.focus();
-            }, 100);
+        if (key === "status" && (value === "Shifted outside the ward" || value === "Shifted in the ward")) {
+            setTimeout(() => presentAddressRef.current?.focus(), 100);
         }
     };
 
-
     useEffect(() => {
-        const loadUpdatedVoter = async () => {
+        const initializeData = async () => {
+            const lang = await AsyncStorage.getItem("app_language") || "en";
+            setLanguage(lang);
+
             const json = await AsyncStorage.getItem("assemblyData");
-            if (!json) return;
-            let parsed = null;
-            try {
-                parsed = JSON.parse(json);
-            } catch (err) {
-                console.log("Raw Value:", json);
-                return;
-            }
-            const updatedVoter = parsed.assembly?.wards
-                ?.flatMap((w) => w.booths)
-                ?.flatMap((b) => b.voters)
-                ?.find((v) => v.voterId === voter.voterId);
+            if (json) {
+                try {
+                    const parsed = JSON.parse(json);
+                    const updatedVoter = parsed.assembly?.wards
+                        ?.flatMap((w) => w.booths)
+                        ?.flatMap((b) => b.voters)
+                        ?.find((v) => v.voterId === voter.voterId);
 
-            if (updatedVoter) {
-                setSelectedVoter(updatedVoter);   // ← update your state
-            }
-            const keys = [
-                "mobile", "dob", "community", "caste", "motherTongue",
-                "education", "residenceType", "ownership", "civicIssue",
-                "natureOfVoter", "status", "voterPoints", "govtSchemeTracking", "engagementPotential", "ifShifted",
-                "presentAddress", "newWard", "newBoothNo", "newSerialNo", "notAvailableReason"
-            ];
-            keys.forEach((key) => {
-                // Skip "Others" check for text input fields (mobile, dob, ifShifted, presentAddress, newWard, newBoothNo, newSerialNo, notAvailableReason)
-                const textInputFields = ["mobile", "dob", "ifShifted", "presentAddress", "newWard", "newBoothNo", "newSerialNo", "notAvailableReason"];
-                
-                if (key === "govtSchemeTracking") {
-                    // Handle array for multi-select
-                    const value = updatedVoter?.[key];
-                    const valueArray = Array.isArray(value) ? value : (value ? [value] : []);
-
-                    // Check if any value in the array is not in the dropdown options (custom "Others" value)
-                    const dropdownValues = dropdownOptions[key] || [];
-                    const customValuesInArray = valueArray.filter(v => !dropdownValues.includes(v));
-                    const standardValues = valueArray.filter(v => dropdownValues.includes(v));
-
-                    // If there are custom values, replace them with "Others" and save the custom value
-                    if (customValuesInArray.length > 0) {
-                        // Use the first custom value (or combine them)
-                        const customValue = customValuesInArray.join(", ");
-                        setCustomValues((prev) => ({
-                            ...prev,
-                            [key]: customValue,
-                        }));
-                        // Set form with "Others" + standard values
-                        handleChange(key, [...standardValues, "Others"]);
-                    } else {
-                        handleChange(key, valueArray);
+                    if (updatedVoter) {
+                        setSelectedVoter(updatedVoter);
+                        const newForm = { ...form };
+                        Object.keys(form).forEach(key => {
+                            if (updatedVoter[key] !== undefined) {
+                                if (key === "govtSchemeTracking") {
+                                    newForm[key] = Array.isArray(updatedVoter[key]) ? updatedVoter[key] : [updatedVoter[key]];
+                                } else {
+                                    newForm[key] = updatedVoter[key];
+                                }
+                            }
+                        });
+                        setForm(newForm);
                     }
-                } else if (textInputFields.includes(key)) {
-                    // For text input fields, just set the value directly
-                    const value = updatedVoter?.[key] ?? "";
-                    handleChange(key, value);
-                } else {
-                    // For dropdown fields, check if value is custom "Others" value
-                    const value = updatedVoter?.[key] ?? "";
-                    const dropdownValues = dropdownOptions[key] || [];
+                } catch (err) { console.error("Error parsing assembly data", err); }
+            }
 
-                    // Only check for "Others" if dropdown has options
-                    if (dropdownValues.length > 0 && value && value !== "" && !dropdownValues.includes(value)) {
-                        // Set "Others" as selected and save the actual value in customValues
-                        setCustomValues((prev) => ({
-                            ...prev,
-                            [key]: value,
-                        }));
-                        handleChange(key, "Others");
-                    } else {
-                        handleChange(key, value);
-                    }
-                }
-            });
-            const lang = await AsyncStorage.getItem("app_language");
-            setLanguage(lang)
-            
-            // Poll Day Activation check
             const code = await CRUDAPI.getAssemblyCode ? await CRUDAPI.getAssemblyCode() : (voter.assemblyCode || '000000000151');
-            CRUDAPI.fetchPollDayConfig(code).then(config => {
-                setPollDayEnabled(config?.enabled || false);
-            }).catch(() => setPollDayEnabled(false));
-
-            CRUDAPI.fetchMessageTemplate(voter.wardCode || booth?.wardId, 'PRINT').then(res => {
-                setPrintTemplate(res?.data?.result || res?.result || res || {});
-            }).catch(() => setPrintTemplate(null));
+            CRUDAPI.fetchPollDayConfig(code).then(config => setPollDayEnabled(config?.enabled || false)).catch(() => {});
+            CRUDAPI.fetchMessageTemplate(voter.wardCode || booth?.wardId, 'PRINT').then(res => setPrintTemplate(res?.data?.result || res?.result || res || {})).catch(() => {});
         };
 
-        loadUpdatedVoter();
-    }, []);  // ← only run once on mount
-
-    // Initialize govtSchemeItems for multi-select
-    useEffect(() => {
-        const items =
-            dropdownOptions.govtSchemeTracking?.map((item) => ({
-                label: item,
-                value: item,
-            })) || [];
-        // Always set items to ensure they're available
-        setGovtSchemeItems(items);
+        initializeData();
+        setGovtSchemeItems(dropdownOptions.govtSchemeTracking.map(item => ({ label: item, value: item })));
     }, []);
 
     const fetchLocation = async () => {
         const loc = await GetCurrentLocation();
-        if (!loc) {
-            showBanner("error", "Location permission not granted. You can continue without it.");
-            return;
+        if (loc) {
+            setLocation(loc);
+            setBanner({ type: "success", message: "Location captured successfully!" });
+        } else {
+            setBanner({ type: "error", message: "Unable to fetch location. Please check permissions." });
         }
-        setLocation(loc);
     };
 
     const handleReset = () => {
         setForm({
-            mobile: "",
-            dob: "",
-            community: "",
-            caste: "",
-            motherTongue: "",
-            education: "",
-            residenceType: "",
-            ownership: "",
-            voterPoints: "",
-            govtSchemeTracking: [],
-            engagementPotential: 0,
-            ifShifted: "",
-            status: "",
-            civicIssue: "",
-            natureOfVoter: "",
-            notes: "",
-            presentAddress: "",
-            newWard: "",
-            newBoothNo: "",
-            newSerialNo: "",
-            notAvailableReason: "",
+            mobile: "", dob: "", community: "", caste: "", motherTongue: "", education: "", residenceType: "",
+            ownership: "", voterPoints: "", govtSchemeTracking: [], engagementPotential: "", ifShifted: "",
+            status: "", civicIssue: "", natureOfVoter: "", notes: "", presentAddress: "", newWard: "",
+            newBoothNo: "", newSerialNo: "", notAvailableReason: "",
         });
+        setCustomValues({});
     };
 
     const buildWhatsAppMessage = () => {
-        return `
-🗳️ *LOK SABHA ELECTION – 2024*
+        const voterName = selectedVoter.firstMiddleNameEn || voter.firstMiddleNameEn || "-";
+        const epic = selectedVoter.epicNo || voter.epicNo || "-";
+        const boothNo = booth?.boothId || voter?.boothNo || "-";
+        const serial = selectedVoter.serialNo || voter.serialNo || "-";
+        const bName = booth?.boothNameEn || "-";
+        const bAddress = booth?.address || "";
 
-*Assembly:* 160 – Sarvagnanagara
-
-*Voter Name:* ${voter.firstMiddleNameEn}
-*EPIC ID:* ${voter.epicNo}
-*Booth No:* ${booth?.boothId}
-*Serial No:* ${voter.serialNo || "-"}
-
-*Polling Booth:*
-${booth?.boothNameEn}
-${booth?.address || ""}
-
-📅 *Date:* 26-Apr-2024
-⏰ *Time:* 7:00 AM – 6:00 PM
-
-🙏 Kindly cast your valuable vote.
-
-— Thank you
-`.trim();
+        return `\u270A *LOK SABHA ELECTION \u2013 2024*\n\n*Assembly:* 160 \u2013 Sarvagnanagara\n\n*Voter Name:* ${voterName}\n*EPIC ID:* ${epic}\n*Booth No:* ${boothNo}\n*Serial No:* ${serial}\n\n*Polling Booth:*\n${bName}\n${bAddress}\n\n\ud83d\udcc5 *Date:* 26-Apr-2024\n\u23f0 *Time:* 7:00 AM \u2013 6:00 PM\n\n\ud83d\ude4f Kindly cast your valuable vote.\n\n\u2014 Thank you`.trim();
     };
 
     const buildSMSMessage = () => {
-        return `
-LOK SABHA ELECTION - 2024
+        const voterName = selectedVoter.firstMiddleNameEn || voter.firstMiddleNameEn || "-";
+        const epic = selectedVoter.epicNo || voter.epicNo || "-";
+        const boothNo = booth?.boothId || voter?.boothNo || "-";
+        const serial = selectedVoter.serialNo || voter.serialNo || "-";
+        const bName = booth?.boothNameEn || "-";
+        const bAddress = booth?.address || "";
 
-Assembly: 160 - SARVAGNANAGARA
-
-Voter Name: ${voter.firstMiddleNameEn}
-Mother: ${voter.motherName || ""}
-EPIC ID: ${voter.epicNo}
-Booth No: ${booth?.boothId} | Serial No: ${voter.serialNo || "-"}
-
-Polling Booth:
-${booth?.boothNameEn}
-${booth?.address || ""}
-Room No: ${booth?.roomNo || "1"}
-
-Date: 26-APR-2024
-Time: 7:00 AM - 6:00 PM
-
-Kindly cast your valuable vote.
-
-P C Mohan - Sl. No 2
-BJP Candidate
-Bengaluru Central Parliamentary Constituency
-`.trim();
+        return `LOK SABHA ELECTION - 2024\n\nAssembly: 160 - SARVAGNANAGARA\n\nVoter Name: ${voterName}\nEPIC ID: ${epic}\nBooth No: ${boothNo} | Serial No: ${serial}\n\nPolling Booth:\n${bName}\n${bAddress}\n\nDate: 26-APR-2024\nTime: 7:00 AM - 6:00 PM\n\nKindly cast your valuable vote.\n\nThank you`.trim();
     };
 
-
-    const openDialer = () => {
-        Linking.openURL(`tel:${form.mobile}`).catch(() =>
-            Alert.alert("Error", "Unable to open dialer")
-        );
-    };
-
-    const openMessage = async () => {
-        if (!form.mobile || form.mobile.length !== 10) {
-            Alert.alert("Error", "Invalid mobile number");
+    const openAction = (type) => {
+        const phone = form.mobile || voter.mobile;
+        if (!phone || phone.length !== 10) {
+            Alert.alert("Error", "Valid 10-digit mobile number required");
             return;
         }
 
-        const message = buildSMSMessage();
-        const encodedMessage = encodeURIComponent(message);
-
-        const phone = form.mobile;
-        const smsUrl =
-            Platform.OS === "ios"
-                ? `sms:${phone}&body=${encodedMessage}`
-                : `sms:${phone}?body=${encodedMessage}`;
-
-        const supported = await Linking.canOpenURL(smsUrl);
-        if (!supported) {
-            Alert.alert("Error", "SMS not supported on this device");
-            return;
+        if (type === 'call') {
+            Linking.openURL(`tel:${phone}`).catch(() => Alert.alert("Error", "Unable to open dialer"));
+        } else if (type === 'sms') {
+            const msg = buildSMSMessage();
+            const url = Platform.OS === "ios" ? `sms:${phone}&body=${encodeURIComponent(msg)}` : `sms:${phone}?body=${encodeURIComponent(msg)}`;
+            Linking.openURL(url).catch(() => Alert.alert("Error", "SMS not supported"));
+        } else if (type === 'whatsapp') {
+            const msg = buildWhatsAppMessage();
+            const url = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
+            Linking.openURL(url).catch(() => Alert.alert("Error", "WhatsApp not installed"));
         }
-
-        Linking.openURL(smsUrl);
-    };
-
-
-    const openWhatsApp = async () => {
-        if (!form.mobile || form.mobile.length !== 10) {
-            Alert.alert("Error", "Invalid mobile number");
-            return;
-        }
-
-        const message = buildWhatsAppMessage();
-        const encodedMessage = encodeURIComponent(message);
-        const phone = `91${form.mobile}`;
-
-        const whatsappUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
-
-        const supported = await Linking.canOpenURL(whatsappUrl);
-        if (!supported) {
-            Alert.alert("Error", "WhatsApp not installed");
-            return;
-        }
-
-        Linking.openURL(whatsappUrl);
-    };
-
-
-    const renderField = ({ key, label }) => {
-        // TEXT INPUT FIELDS
-        console.log(form)
-        if (key === "mobile" || key === "dob" || key === "ifShifted") {
-            return (
-                <TextInput
-                    value={maskValue(form[key], key)}
-                    keyboardType={key === "mobile" ? "number-pad" : "default"}
-                    placeholder={label}
-                    placeholderTextColor="#94A3B8"
-                    maxLength={key === "mobile" ? 10 : 50}
-                    className="border border-gray-300 rounded-xl px-4 py-3 bg-[#E3EDF3] text-black"
-                    onChangeText={(text) => handleChange(key, text)}
-                />
-            );
-        }
-
-
-        // MULTI-SELECT FOR govtSchemeTracking
-        if (key === "govtSchemeTracking") {
-            const currentValue = Array.isArray(form[key]) ? form[key] : [];
-            const isOthersSelected = currentValue.includes("Others");
-
-            // Ensure items are available - fallback to generating from dropdownOptions if state is empty
-            const itemsToUse = govtSchemeItems.length > 0
-                ? govtSchemeItems
-                : dropdownOptions[key]?.map((item) => ({
-                    label: item,
-                    value: item,
-                })) || [];
-
-            return (
-                <View style={{ zIndex: openDropdown === key ? 1000 : 1 }}>
-                    <DropDownPicker
-                        open={openDropdown === key}
-                        value={currentValue}
-                        items={itemsToUse}
-                        setOpen={(isOpen) =>
-                            setOpenDropdown(isOpen ? key : null)
-                        }
-                        setItems={(callback) => {
-                            // Prevent items from being cleared
-                            setGovtSchemeItems((prevItems) => {
-                                if (prevItems.length === 0) {
-                                    // If items are empty, initialize them
-                                    const items =
-                                        dropdownOptions[key]?.map((item) => ({
-                                            label: item,
-                                            value: item,
-                                        })) || [];
-                                    return items;
-                                }
-                                // Otherwise, use the callback to update
-                                const newItems = callback(prevItems);
-                                return Array.isArray(newItems) && newItems.length > 0 ? newItems : prevItems;
-                            });
-                        }}
-                        multiple={true}
-                        mode="BADGE"
-                        badgeDotColors={[bgColors.blue500_1]}
-                        badgeColors={[bgColors.blue500_1]}
-                        listMode={Platform.OS === "android" ? "MODAL" : "SCROLLVIEW"}
-                        scrollViewProps={Platform.OS === "android" ? undefined : {
-                            nestedScrollEnabled: true,
-                        }}
-                        setValue={(callback) => {
-                            // Use the latest form value to avoid stale closures
-                            setForm((prevForm) => {
-                                const prevValue = Array.isArray(prevForm[key]) ? prevForm[key] : [];
-                                const newValue = callback(prevValue);
-                                // Ensure it's always an array
-                                const valueArray = Array.isArray(newValue) ? newValue : [];
-
-                                // Update custom values if "Others" is removed
-                                if (!valueArray.includes("Others")) {
-                                    setCustomValues((prev) => ({
-                                        ...prev,
-                                        [key]: "",
-                                    }));
-                                }
-
-                                return { ...prevForm, [key]: valueArray };
-                            });
-                        }}
-                        closeOnBackPressed={true}
-                        closeAfterSelecting={false}
-                        maxHeight={300}
-                        placeholder={`Select ${label}`}
-                        style={{
-                            backgroundColor: "#E3EDF3",
-                            borderColor: "#000",
-                            borderRadius: 10,
-                            minHeight: 48,
-                        }}
-                        dropDownContainerStyle={{
-                            borderColor: "#000",
-                            maxHeight: 300,
-                        }}
-                        selectedItemContainerStyle={{
-                            backgroundColor: bgColors.blue500_1,
-                        }}
-                        selectedItemLabelStyle={{
-                            color: "#FFFFFF",
-                            fontWeight: 600,
-                        }}
-                        textStyle={{
-                            color: "#000",
-                            fontSize: 14,
-                        }}
-                        placeholderStyle={{
-                            color: "#888",
-                        }}
-                        tickIconStyle={{
-                            tintColor: "#FFFFFF",
-                        }}
-                        checkboxIconStyle={{
-                            tintColor: bgColors.blue500_1,
-                        }}
-                        badgeTextStyle={{
-                            color: "#FFFFFF",
-                        }}
-                        badgeContainerStyle={{
-                            backgroundColor: bgColors.blue500_1,
-                        }}
-                        zIndex={1000}
-                        zIndexInverse={3000}
-                    />
-
-                    {/* CUSTOM INPUT FOR OTHERS IN MULTI-SELECT */}
-                    {isOthersSelected && (
-                        <TextInput
-                            placeholder={`Enter your ${label.toLowerCase()}`}
-                            placeholderTextColor="#94A3B8"
-                            value={customValues[key] || ""}
-                            onChangeText={(text) =>
-                                setCustomValues((prev) => ({
-                                    ...prev,
-                                    [key]: text,
-                                }))
-                            }
-                            className={`border border-dashed border-gray-400 rounded-lg px-4 py-3 mt-2 text-black ${bgColors.customLightBlue4}`}
-                        />
-                    )}
-                </View>
-            );
-        }
-
-        // SINGLE SELECT DROPDOWN OPTIONS
-        const items =
-            dropdownOptions[key]?.map((item) => ({
-                label: item,
-                value: item,
-            })) || [];
-
-        return (
-            <View style={{ zIndex: openDropdown === key ? 1000 : 1 }}>
-                <DropDownPicker
-                    open={openDropdown === key}
-                    value={form[key]}
-                    items={items}
-                    setOpen={(isOpen) =>
-                        setOpenDropdown(isOpen ? key : null)
-                    }
-                    listMode={Platform.OS === "android" ? "MODAL" : "SCROLLVIEW"}
-                    setValue={(callback) => {
-                        const value = callback(form[key]);
-                        handleChange(key, value);
-
-                        if (value !== "Others") {
-                            setCustomValues((prev) => ({
-                                ...prev,
-                                [key]: "",
-                            }));
-                        }
-                    }}
-                    placeholder={`Select ${label}`}
-                    style={{
-                        backgroundColor: "#E3EDF3",
-                        borderColor: "#000",
-                        borderRadius: 10,
-                        minHeight: 48,
-                    }}
-                    dropDownContainerStyle={{
-                        borderColor: "#000",
-                        maxHeight: 200,
-                    }}
-                    selectedItemContainerStyle={{
-                        backgroundColor: bgColors.blue500_1,
-                    }}
-                    selectedItemLabelStyle={{
-                        color: "#FFFFFF",
-                        fontWeight: 600,
-                    }}
-                    textStyle={{
-                        color: "#000",
-                        fontSize: 14,
-                    }}
-                    placeholderStyle={{
-                        color: "#888",
-                    }}
-                    tickIconStyle={{
-                        tintColor: "#FFFFFF",
-                    }}
-                    zIndex={1000}
-                    zIndexInverse={3000}
-                />
-
-                {/* CUSTOM INPUT FOR OTHERS */}
-                {form[key] === "Others" && (
-                        <TextInput
-                            placeholder={`Enter your ${label.toLowerCase()}`}
-                            placeholderTextColor="#94A3B8"
-                            value={customValues[key] || ""}
-                            onChangeText={(text) =>
-                                setCustomValues((prev) => ({
-                                    ...prev,
-                                    [key]: text,
-                                }))
-                            }
-                            className={`border border-dashed border-gray-400 rounded-lg px-4 py-3 mt-2 text-black ${bgColors.customLightBlue4}`}
-                        />
-                    )}
-            </View>
-        );
-    };
-
-
-    const showBanner = (type, message) => {
-        setBanner({ type, message });
     };
 
     const handleUpdate = async () => {
-        const assemblyData = await AsyncStorage.getItem('assemblyData');
-        if (!assemblyData) {
-            showBanner("error", "No assembly data found");
+        if (!location?.latitude || !location?.longitude) {
+            setBanner({ type: "error", message: "Location is required to update voter info." });
             return;
         }
-        const parsedAssemblyData = JSON.parse(assemblyData);
-        
-        // Fetch location and wait for it (don't fail if location fetch fails)
-        try {
-            await fetchLocation();
-        } catch (error) {
-            console.log('Location fetch failed, continuing without location:', error);
-        }
-        const updateLocalAssembly = (data, voterId, updates, defaultLocation) => {
-            // Filter out only null/undefined, but keep empty strings, 0, false, and empty arrays
-            const validUpdates = Object.fromEntries(
-                Object.entries(updates).filter(([_, value]) => {
-                    // Only filter out null and undefined
-                    return value !== null && value !== undefined;
-                })
-            );
 
-            return {
-                ...data,
-                assembly: {
-                    ...data.assembly,
-                    wards: data.assembly?.wards.map((ward) => ({
-                        ...ward,
-                        booths: ward.booths.map((booth) => ({
-                            ...booth,
-                            voters: booth.voters.map((voter) =>
-                                voter.voterId === voterId ? {
-                                    ...voter, ...validUpdates,
-                                    latitude: defaultLocation && defaultLocation.latitude,
-                                    longitude: defaultLocation && defaultLocation.longitude
-                                } : voter
-                            ),
-                        })),
-                    })),
-                },
-            };
-        };
-
-        const finalData = {};
-        Object.keys(form).forEach((key) => {
-            const selected = form[key];
-            const custom = customValues[key];
-
-            // Handle multi-select for govtSchemeTracking
-            if (key === "govtSchemeTracking") {
-                if (Array.isArray(selected) && selected.length > 0) {
-                    // If "Others" is in the array, replace it with custom value
-                    if (selected.includes("Others")) {
-                        const withoutOthers = selected.filter(item => item !== "Others");
-                        finalData[key] = custom && custom.trim()
-                            ? [...withoutOthers, custom.trim()]
-                            : withoutOthers;
-                    } else {
-                        finalData[key] = selected;
-                    }
-                } else {
-                    // Keep empty array for govtSchemeTracking
-                    finalData[key] = [];
-                }
-            }
-            // Handle single select with "Others" option
-            else if (selected === "Others") {
-                finalData[key] = custom || "";
-            } else {
-                // For all other fields, save the value (including empty strings)
-                finalData[key] = selected !== undefined && selected !== null ? selected : "";
+        setSaving(true);
+        const finalData = { ...form };
+        // Handle "Others" logic
+        Object.keys(customValues).forEach(key => {
+            if (form[key] === "Others" && customValues[key]) {
+                finalData[key] = customValues[key];
             }
         });
-        
-        console.log('Final data to save:', finalData);
 
-        const changedFields = {};
-        Object.keys(finalData).forEach((key) => {
-            const newValue = finalData[key];
-            // Use selectedVoter first, fallback to original voter from route params
-            const oldValue = (selectedVoter && selectedVoter[key] !== undefined) 
-                ? selectedVoter[key] 
-                : (voter && voter[key] !== undefined ? voter[key] : undefined);
-
-            // ⛔ Skip only null/undefined values, but allow empty strings and arrays
-            if (newValue === undefined || newValue === null) {
-                return;
-            }
-
-            // For arrays, skip only if completely empty
-            if (key === "govtSchemeTracking") {
-                if (!Array.isArray(newValue) || newValue.length === 0) {
-                    return;
-                }
-            }
-
-            // ✅ Add only if value actually changed
-            if (key === "govtSchemeTracking") {
-                // For arrays, compare arrays
-                const oldArray = Array.isArray(oldValue) ? oldValue : (oldValue ? [oldValue] : []);
-                const newArray = Array.isArray(newValue) ? newValue : [];
-                const oldSorted = [...oldArray].sort().join(',');
-                const newSorted = [...newArray].sort().join(',');
-                if (oldSorted !== newSorted) {
-                    changedFields[key] = newValue;
-                    console.log(`Field changed - ${key}:`, { old: oldSorted, new: newSorted });
-                }
-            } else {
-                // For other fields, compare as strings to handle type differences
-                const oldStr = oldValue != null ? String(oldValue).trim() : "";
-                const newStr = newValue != null ? String(newValue).trim() : "";
-                if (oldStr !== newStr) {
-                    changedFields[key] = newValue;
-                    console.log(`Field changed - ${key}:`, { old: oldStr, new: newStr });
-                }
-            }
-        });
-        
-        // If no fields changed, show message and return early
-        if (Object.keys(changedFields).length === 0) {
-            showBanner("info", "No changes to save");
-            return;
-        }
-
-        const logId = await addLog(
-            `Updated voter #${voter.epicNo}: ${Object.keys(changedFields).join(", ")}`,
-            voter,
-            booth,
-            "pending",
-            location
-        );
+        const logId = await addLog(`Updated voter #${voter.epicNo}`, voter, booth, "pending", location);
 
         try {
-            const updatedAssemblyData = updateLocalAssembly(
-                parsedAssemblyData,
-                voter.voterId,
-                changedFields,
-                location
-            );
-
-            await AsyncStorage.setItem('assemblyData', JSON.stringify(updatedAssemblyData));
-            setSelectedVoter(prev => ({ ...prev, ...changedFields }));
-            
-            // Debug: Log what was saved
-            console.log('Saved changedFields:', changedFields);
-            console.log('Updated voter in local storage');
-            console.log('Number of fields changed:', Object.keys(changedFields).length);
-            
-            // Show success message for local save
-            showBanner("success", `Saved ${Object.keys(changedFields).length} field(s) locally`);
-        } catch (error) {
-            console.error('Error saving to local storage:', error);
-            showBanner("error", "Failed to save to local storage");
-            return;
-        }
-
-        const transformedReq = {
-            updateLocationLat: location && location.latitude || 0,
-            updateLocationLng: location && location.longitude || 0,
-            updateRequest: {
-                ...changedFields,
-                latitude: voter.latitude || (location && location.latitude) || 0,
-                longitude: voter.longitude || (location && location.longitude) || 0
+            const assemblyData = await AsyncStorage.getItem('assemblyData');
+            if (assemblyData) {
+                const parsed = JSON.parse(assemblyData);
+                parsed.assembly.wards = parsed.assembly.wards.map(w => ({
+                    ...w, booths: w.booths.map(b => ({
+                        ...b, voters: b.voters.map(v => v.voterId === voter.voterId ? { ...v, ...finalData, latitude: location.latitude, longitude: location.longitude } : v)
+                    }))
+                }));
+                await AsyncStorage.setItem('assemblyData', JSON.stringify(parsed));
+                setSelectedVoter(prev => ({ ...prev, ...finalData }));
             }
-        };
-        try {
-            const res = await CRUDAPI.updateVoter(voter.epicNo, transformedReq, {
-                boothNo: voter?.boothNo || voter?.boothInfo?.boothNo,
-                wardCode: voter?.wardCode || voter?.boothInfo?.wardCode,
-            });
+
+            const res = await CRUDAPI.updateVoter(voter.epicNo, {
+                updateLocationLat: location.latitude,
+                updateLocationLng: location.longitude,
+                updateRequest: { ...finalData, latitude: location.latitude, longitude: location.longitude }
+            }, { boothNo: voter?.boothNo, wardCode: voter?.wardCode || booth?.wardId });
+
             if (res.success) {
                 await updateLogStatus(logId, "server");
-                showBanner("success", "Voter Info updated successfully!")
+                setBanner({ type: "success", message: "Voter Info updated successfully!" });
             }
         } catch (error) {
-            console.log(error)
-            showBanner("error", error?.message || "Saved locally, Sync pending due to poor internet connection.")
+            setBanner({ type: "error", message: "Saved locally, sync pending." });
+        } finally {
+            setSaving(false);
         }
     };
 
-    const maskValue = (value, key) => {
-        if (!value) return "";
-
-        // Only mask mobile number
-        if (key === "mobile") {
-            const visibleDigits = 4;
-            const maskedLength = Math.max(value.length - visibleDigits, 0);
-            return "*".repeat(maskedLength) + value.slice(-visibleDigits);
+    const renderField = (key, label) => {
+        if (key === "mobile" || key === "dob" || key === "ifShifted" || key === "presentAddress" || key === "newWard" || key === "newBoothNo" || key === "newSerialNo" || key === "notAvailableReason") {
+            return (
+                <View key={key} style={{ marginBottom: 16 }}>
+                    <Text style={{ fontSize: 14, fontWeight: "500", color: "#6B7280", marginBottom: 6 }}>{label}</Text>
+                    <TextInput
+                        value={form[key]}
+                        keyboardType={key === "mobile" ? "number-pad" : "default"}
+                        placeholder={label}
+                        placeholderTextColor="#94A3B8"
+                        style={{ borderWidth: 1, borderColor: "#F3F4F6", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, backgroundColor: "white", color: "#1F2937", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }}
+                        onChangeText={(text) => handleChange(key, text)}
+                        multiline={key === "presentAddress" || key === "notes"}
+                        numberOfLines={key === "presentAddress" ? 3 : 1}
+                    />
+                </View>
+            );
         }
 
-        // No masking for other fields
-        return value;
-    };
+        const isMulti = key === "govtSchemeTracking";
+        const items = dropdownOptions[key]?.map(opt => ({ label: opt, value: opt })) || [];
 
+        return (
+            <View key={key} style={{ marginBottom: 16, zIndex: openDropdown === key ? 1000 : 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: "500", color: "#6B7280", marginBottom: 6 }}>{label}</Text>
+                <DropDownPicker
+                    open={openDropdown === key}
+                    value={form[key]}
+                    items={isMulti ? govtSchemeItems : items}
+                    setOpen={(isOpen) => setOpenDropdown(isOpen ? key : null)}
+                    setValue={(callback) => {
+                        const val = callback(form[key]);
+                        handleChange(key, val);
+                    }}
+                    multiple={isMulti}
+                    mode="BADGE"
+                    placeholder={`Select ${label}`}
+                    listMode="SCROLLVIEW"
+                    style={{ backgroundColor: "#fff", borderColor: "#F3F4F6", borderRadius: 12, minHeight: 52 }}
+                    dropDownContainerStyle={{ borderColor: "#F3F4F6", elevation: 5, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10 }}
+                    textStyle={{ color: "#1F2937", fontSize: 15 }}
+                    placeholderStyle={{ color: "#94A3B8" }}
+                    badgeColors={["#3B82F6"]}
+                    badgeTextStyle={{ color: "#fff" }}
+                />
+                {form[key] === "Others" && (
+                    <TextInput
+                        placeholder={`Enter ${label.toLowerCase()}`}
+                        value={customValues[key]}
+                        onChangeText={t => setCustomValues(prev => ({ ...prev, [key]: t }))}
+                        style={{ marginTop: 8, borderStyle: "dashed", borderWidth: 1, borderColor: "#BFDBFE", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: "#EFF6FF", color: "#1F2937" }}
+                    />
+                )}
+            </View>
+        );
+    };
 
     return (
-        <ScrollView className="flex-1 bg-white p-4" >
-
-            <View className={`${bgColors.gray100} p-4 rounded-2xl mb-5`}>
-                <View className="space-y-2">
-                    <View className="flex-row mb-2">
-                        <Text className="text-black font-bold ">{labels.name[language]}  </Text>
-                        <Text className="text-black flex-1">:  {language === 'en' ? voter.firstMiddleNameEn.toUpperCase() : voter.firstMiddleNameLocal}
-                        </Text>
-                    </View>
-                    <View className="flex-row mb-2">
-                        <Text className="text-black font-bold">{labels.epicNo[language]}  </Text>
-                        <Text className="text-black flex-1">:  {voter.epicNo} </Text>
-                    </View>
-                    <View className="flex-row mb-2">
-                        <Text className="text-black font-bold">{labels.pollingBooth[language]}  </Text>
-                        <Text className="text-black flex-1">:  {booth?.boothId} - {language === 'en' ? booth?.boothNameEn : booth?.boothNameLocal} </Text>
+        <View style={{ flex: 1, backgroundColor: "white" }}>
+            {/* Header */}
+            <ScrollView style={{ flex: 1, paddingHorizontal: 20, marginTop: 10 }} showsVerticalScrollIndicator={false}>
+                {/* Voter Details Card */}
+                <View style={{ backgroundColor: "#F9FAFB", borderRadius: 24, padding: 24, marginBottom: 24, borderWidth: 1, borderColor: "#F3F4F6" }}>
+                    <View style={{ gap: 16 }}>
+                        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                            <Text style={{ fontSize: 14, fontWeight: "bold", color: "#111827", width: 112 }}>Name</Text>
+                            <Text style={{ fontSize: 14, color: "#374151", flex: 1 }}>{language === 'en' ? (voter.firstMiddleNameEn || "-").toUpperCase() : voter.firstMiddleNameLocal}</Text>
+                        </View>
+                        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                            <Text style={{ fontSize: 14, fontWeight: "bold", color: "#111827", width: 112 }}>EPIC / Voter ID</Text>
+                            <Text style={{ fontSize: 14, color: "#374151", flex: 1 }}>{voter.epicNo || "-"}</Text>
+                        </View>
+                        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                            <Text style={{ fontSize: 14, fontWeight: "bold", color: "#111827", width: 112 }}>Polling Booth</Text>
+                            <Text style={{ fontSize: 14, color: "#374151", flex: 1 }}>
+                                {booth?.boothId || voter?.boothId || voter?.boothNo || "-"} - {
+                                    language === 'en' 
+                                    ? (booth?.boothNameEn || voter?.boothNameEn || voter?.boothLabel || voter?.pollingStationAdrEn || voter?.pollingStationNameEn || voter?.boothName || "-") 
+                                    : (booth?.boothNameLocal || voter?.boothNameLocal || voter?.pollingStationAdrLocal || "-")
+                                }
+                            </Text>
+                        </View>
+                        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                            <Text style={{ fontSize: 14, fontWeight: "bold", color: "#111827", width: 112 }}>Ward</Text>
+                            <Text style={{ fontSize: 14, color: "#374151", flex: 1 }}>
+                                {voter.wardCode || booth?.wardId || voter?.wardId || "-"} - {
+                                    booth?.wardNameEn || voter?.wardNameEn || (language === 'en' ? "Vibhootipura" : "ವಿಭೂತಿಪುರ")
+                                }
+                            </Text>
+                        </View>
                     </View>
                 </View>
 
-                <TouchableOpacity
-                    className={`flex-row justify-center items-center py-3 rounded-xl ${location || voter?.latitude ? bgColors.green600 : bgColors.blue600}`}
-                    onPress={fetchLocation}
-                >
-                    <Ionicons
-                        name={location || voter?.latitude ? "checkmark-circle-outline" : "location-outline"}
-                        size={20}
-                        color="white"
-                    />
-                    <Text className="text-white text-base font-semibold ml-2">
-                        {location || voter?.latitude ? "Location Fetched" : "Get Location"}
-                    </Text>
-                </TouchableOpacity>
-
-                <View className="flex-row flex-wrap gap-4 mt-6">
-                    <TouchableOpacity
-                        onPress={openMessage}
-                        className="px-4 py-3 rounded-xl border border-black w-[30%] flex-row justify-center "
-                        style={{ borderWidth: 0.2 }}
+                {/* Map Section */}
+                <View style={{ marginBottom: 24 }}>
+                    <TouchableOpacity 
+                        activeOpacity={0.9}
+                        onPress={() => {
+                            if (location) {
+                                const url = Platform.select({
+                                    ios: `maps:0,0?q=${location.latitude},${location.longitude}`,
+                                    android: `geo:0,0?q=${location.latitude},${location.longitude}`
+                                });
+                                Linking.openURL(url || "");
+                            }
+                        }}
+                        style={{ height: 192, backgroundColor: "#EFF6FF", borderRadius: 24, overflow: "hidden", borderWidth: 1, borderColor: "#F3F4F6", alignItems: "center", justifyContent: "center", position: "relative" }}
                     >
-                        <Ionicons name="chatbubble-outline" size={20} color="#000" />
-                        <Text className="text-black text-center ml-1 pt-1">SMS</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={openWhatsApp}
-                        className="px-4 py-3 rounded-xl border border-black w-[30%] flex-row justify-center "
-                        style={{ borderWidth: 0.2 }}
-                    >
-                        <Ionicons name="logo-whatsapp" size={20} color={bgColors.green600_1} />
-                        <Text className="text-black text-center ml-1 pt-1">WhatsApp</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={openDialer}
-                        className="px-4 py-3 rounded-xl border border-black w-[30%] flex-row justify-center "
-                        style={{ borderWidth: 0.2 }}
-                    >
-                        <Ionicons name="call-outline" size={20} color={bgColors.blue500_1} />
-                        <Text className="text-black text-center ml-1 pt-1">Call</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-            <View className="flex-row bg-gray-100 rounded-xl p-1 mb-4">
-                {["PRIMARY", "ADDITIONAL", "NOTES"].map(tab => (
-                    <TouchableOpacity
-                        key={tab}
-                        onPress={() => setActiveTab(tab)}
-                        className={`flex-1 py-2 rounded-xl ${activeTab === tab ? "bg-blue-700" : "bg-transparent"
-                            }`}
-                    >
-                        <Text
-                            className={`text-center font-semibold ${activeTab === tab ? "text-white" : "text-gray-700"
-                                }`}
-                        >
-                            {tab}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
-
-            {/* PRIMARY */}
-            {activeTab === "PRIMARY" &&
-                fields
-                    .filter(f => primaryKeys.includes(f.key))
-                    .map(f => (
-                        <View key={f.key} className="mb-4">
-                            <Text className="text-sm text-gray-600 mb-1" >{f.label}</Text>
-                            {renderField(f)}
-                        </View>
-                    ))}
-
-            {/* ADDITIONAL */}
-            {activeTab === "ADDITIONAL" &&
-                fields
-                    .filter(f => additionalKeys.includes(f.key))
-                    .map(f => (
-                        <View key={f.key} className="mb-4">
-                            <Text className="text-sm text-gray-600 mb-1">{f.label}</Text>
-                            {renderField(f)}
-                        </View>
-                    ))}
-
-            {/* NOTES */}
-            {activeTab === "NOTES" && (
-                <>
-                    {/* Availability Section */}
-                    <View className="mb-4">
-                        <Text className="text-sm text-gray-600 mb-1">Available</Text>
-                        <View style={{ zIndex: openDropdown === "status" ? 1000 : 1 }}>
-                            <DropDownPicker
-                                open={openDropdown === "status"}
-                                value={form.status}
-                                setValue={(callback) => {
-                                    const value = callback(form.status);
-                                    handleChange("status", value);
-                                }}
-                                items={[
-                                    ...(dropdownOptions.status?.map((item) => ({
-                                        label: item,
-                                        value: item,
-                                    })) || []),
-                                    ...(pollDayEnabled ? [
-                                        { label: "VOTED", value: "VOTED" },
-                                        { label: "NOT VOTED", value: "NOT VOTED" }
-                                    ] : [])
-                                ]}
-                                placeholder="Select Availability"
-                                style={{
-                                    backgroundColor: "#E3EDF3",
-                                    borderColor: "#000",
-                                    borderRadius: 10,
-                                    minHeight: 48,
-                                }}
-                                dropDownContainerStyle={{
-                                    borderColor: "#000",
-                                    maxHeight: 200,
-                                }}
-                                selectedItemContainerStyle={{
-                                    backgroundColor: bgColors.blue500_1,
-                                }}
-                                selectedItemLabelStyle={{
-                                    color: "#FFFFFF",
-                                    fontWeight: 600,
-                                }}
-                                textStyle={{
-                                    color: "#000",
-                                    fontSize: 14,
-                                }}
-                                placeholderStyle={{
-                                    color: "#888",
-                                }}
-                                tickIconStyle={{
-                                    tintColor: "#FFFFFF",
-                                }}
-                                zIndex={1000}
-                                zIndexInverse={3000}
-                            />
-                        </View>
-
-                        {/* Present Address for "Shifted in the ward" or "Shifted outside the ward" */}
-                        {(form.status === "Shifted in the ward" || form.status === "Shifted outside the ward") && (
-                            <View className="mt-2">
-                                <Text className="text-sm text-gray-600 mb-1">Enter present address</Text>
-                                <TextInput
-                                    ref={presentAddressRef}
-                                    value={form.presentAddress}
-                                    onChangeText={(text) => handleChange("presentAddress", text)}
-                                    placeholder="Enter present address"
-                                    multiline
-                                    numberOfLines={3}
-                                    className="border border-gray-300 rounded-xl px-4 py-3 bg-[#E3EDF3] text-black"
-                                />
-                            </View>
-                        )}
-
-                        {/* New Ward, Booth No, Serial No for "Recommend shift to the new ward" */}
-                        {form.status === "Recommend shift to the new ward" && (
-                            <View className="mt-2 space-y-2">
-                                <View>
-                                    <Text className="text-sm text-gray-600 mb-1">Ward</Text>
-                                    <TextInput
-                                        value={form.newWard}
-                                        onChangeText={(text) => handleChange("newWard", text)}
-                                        placeholder="Enter ward"
-                                        className="border border-gray-300 rounded-xl px-4 py-3 bg-[#E3EDF3] text-black"
-                                    />
-                                </View>
-                                <View>
-                                    <Text className="text-sm text-gray-600 mb-1">Booth No</Text>
-                                    <TextInput
-                                        value={form.newBoothNo}
-                                        onChangeText={(text) => handleChange("newBoothNo", text)}
-                                        placeholder="Enter booth number"
-                                        className="border border-gray-300 rounded-xl px-4 py-3 bg-[#E3EDF3] text-black"
-                                    />
-                                </View>
-                                <View>
-                                    <Text className="text-sm text-gray-600 mb-1">Serial No</Text>
-                                    <TextInput
-                                        value={form.newSerialNo}
-                                        onChangeText={(text) => handleChange("newSerialNo", text)}
-                                        placeholder="Enter serial number"
-                                        className="border border-gray-300 rounded-xl px-4 py-3 bg-[#E3EDF3] text-black"
-                                    />
-                                </View>
-                            </View>
-                        )}
-
-                        {/* Not Available Reason */}
-                        {form.status === "Not available" && (
-                            <View className="mt-2">
-                                <Text className="text-sm text-gray-600 mb-1">Enter the reason</Text>
-                                <TextInput
-                                    value={form.notAvailableReason}
-                                    onChangeText={(text) => handleChange("notAvailableReason", text)}
-                                    placeholder="Enter the reason"
-                                    multiline
-                                    numberOfLines={3}
-                                    className="border border-gray-300 rounded-xl px-4 py-3 bg-[#E3EDF3] text-black"
-                                />
-                            </View>
-                        )}
-                    </View>
-
-                    {/* Notes Section */}
-                    <View className="mb-4">
-                        <Text className="text-sm text-gray-600 mb-1">ENTER NOTES</Text>
-                        <TextInput
-                            multiline
-                            numberOfLines={5}
-                            value={form.notes}
-                            onChangeText={t => handleChange("notes", t)}
-                            placeholder="Enter notes"
-                            className="border border-gray-300 rounded-xl p-4 bg-[#E3EDF3] text-black"
+                        <Image 
+                            source={{ uri: `https://maps.googleapis.com/maps/api/staticmap?center=${location?.latitude || 12.9716},${location?.longitude || 77.5946}&zoom=15&size=600x300&markers=color:red%7C${location?.latitude || 12.9716},${location?.longitude || 77.5946}&key=MAP_PLACEHOLDER` }} 
+                            style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, opacity: 1 }}
                         />
-                    </View>
-                </>
-            )}
-            <View className="flex-row justify-between mt-5 mb-5 mx-5">
-                <TouchableOpacity
-                    onPress={handleReset}
-                    className={`flex-1  py-3 rounded-xl mr-2 border border-black`}
-                    style={{ borderWidth: 0.2 }}
-                >
-                    <Text className="text-black font-semibold text-center">Reset</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    onPress={() => handleUpdate()}
-                    className={`flex-1 ${bgColors.green600} py-3 rounded-xl`}
-                >
-                    <Text className="text-white font-semibold text-center">Update</Text>
-                </TouchableOpacity>
-            </View>
-            <View className="flex-row justify-between mt-5 mb-5 mx-5">
+                        <View style={{ alignItems: "center", backgroundColor: 'rgba(255,255,255,0.7)', padding: 8, borderRadius: 12 }}>
+                            <Ionicons name="location" size={32} color="#EF4444" />
+                            <Text style={{ fontSize: 10, color: "#2563EB", fontWeight: "bold", marginTop: 2 }}>TAP TO VIEW MAP</Text>
+                        </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={fetchLocation}
+                        style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#2563EB", paddingVertical: 16, borderRadius: 16, marginTop: 16, shadowColor: "#3B82F6", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4 }}
+                    >
+                        <Ionicons name="location" size={20} color="white" />
+                        <Text style={{ color: "white", fontSize: 16, fontWeight: "bold", marginLeft: 8 }}>Location Captured</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* Quick Actions */}
+                <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 32, gap: 12 }}>
+                    <TouchableOpacity onPress={() => openAction('sms')} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
+                        <Ionicons name="chatbubble-outline" size={22} color="#4B5563" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => openAction('whatsapp')} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
+                        <Ionicons name="logo-whatsapp" size={22} color="#22C55E" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => openAction('call')} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
+                        <Ionicons name="call-outline" size={22} color="#3B82F6" />
+                    </TouchableOpacity>
+                </View>
+
+                {/* Tabs */}
+                <View style={{ flexDirection: 'row', backgroundColor: '#F9FAFB', borderRadius: 16, padding: 6, marginBottom: 32 }}>
+                    {["PRIMARY", "ADDITIONAL", "NOTES"].map(tab => (
+                        <TouchableOpacity
+                            key={tab}
+                            onPress={() => setActiveTab(tab)}
+                            style={{
+                                flex: 1,
+                                paddingVertical: 12,
+                                borderRadius: 12,
+                                backgroundColor: activeTab === tab ? "#2563EB" : "transparent"
+                            }}
+                        >
+                            <Text style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 12, color: activeTab === tab ? "white" : "#6B7280" }}>{tab}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
+                {/* Form Sections */}
+                <View style={{ marginBottom: 40 }}>
+                    {activeTab === "PRIMARY" && primaryKeys.map(k => renderField(k, fieldLabels[k]))}
+                    {activeTab === "ADDITIONAL" && additionalKeys.map(k => renderField(k, fieldLabels[k]))}
+                    {activeTab === "NOTES" && (
+                        <>
+                            {renderField("status", "Available")}
+                            {(form.status && form.status.includes("Shifted")) && renderField("presentAddress", "Enter present address")}
+                            {form.status === "Recommend shift to the new ward" && (
+                                <View style={{ gap: 16 }}>
+                                    {renderField("newWard", "Ward")}
+                                    {renderField("newBoothNo", "Booth No")}
+                                    {renderField("newSerialNo", "Serial No")}
+                                </View>
+                            )}
+                            {form.status === "Not available" && renderField("notAvailableReason", "Enter the reason")}
+                            <View style={{ marginBottom: 16 }}>
+                                <Text style={{ fontSize: 14, fontWeight: "500", color: "#6B7280", marginBottom: 6 }}>ENTER NOTES</Text>
+                                <TextInput
+                                    multiline
+                                    numberOfLines={5}
+                                    value={form.notes}
+                                    onChangeText={t => handleChange("notes", t)}
+                                    placeholder="Enter notes"
+                                    style={{ borderWidth: 1, borderColor: "#F3F4F6", borderRadius: 12, padding: 16, backgroundColor: "white", color: "#1F2937", height: 120, textAlignVertical: "top" }}
+                                />
+                            </View>
+                        </>
+                    )}
+                </View>
+
+                {/* Footer Actions */}
+                <View style={{ flexDirection: "row", gap: 16, marginBottom: 16 }}>
+                    <TouchableOpacity onPress={handleReset} style={{ flex: 1, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", paddingVertical: 16, borderRadius: 16 }}>
+                        <Text style={{ textAlign: "center", fontWeight: "bold", color: "#111827", fontSize: 16 }}>Reset</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        onPress={handleUpdate} 
+                        disabled={saving}
+                        style={{ flex: 1, backgroundColor: "#94A3B8", paddingVertical: 16, borderRadius: 16 }}
+                    >
+                        {saving ? <ActivityIndicator color="white" /> : <Text style={{ textAlign: "center", fontWeight: "bold", color: "white", fontSize: 16 }}>Update</Text>}
+                    </TouchableOpacity>
+                </View>
+
                 <TouchableOpacity
                     onPress={async () => {
                         const slip = PrinterHelper.formatVoterSlip(selectedVoter, booth, printTemplate);
                         const connected = await AsyncStorage.getItem('connectedPrinter');
                         const printer = connected ? JSON.parse(connected) : null;
                         const success = await PrinterHelper.performPrint(printer, slip);
-                        if (success) showBanner("success", "Print command sent!");
+                        if (success) setBanner({ type: "success", message: "Print command sent!" });
                     }}
-                    className={`flex-1  py-3 rounded-xl mr-2  ${bgColors.blue600}`}
+                    style={{ backgroundColor: "#B0BAD2", paddingVertical: 20, borderRadius: 16, marginBottom: 48 }}
                 >
-                    <Text className="text-white font-semibold text-center">Voter Slip Print</Text>
+                    <Text style={{ textAlign: "center", fontWeight: "bold", color: "white", fontSize: 16 }}>Voter Slip Print</Text>
                 </TouchableOpacity>
-            </View>
-        </ScrollView>
+            </ScrollView>
+        </View>
     );
 }
