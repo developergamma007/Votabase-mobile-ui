@@ -55,7 +55,7 @@ export default function VoterFamilyDetails() {
             <View className={`${bgColors.white} rounded-2xl shadow-sm`}>
                 {family?.members.map((m, index) => (
                     <View
-                        key={m.memberId}
+                        key={`${m?.memberId || m?.epicNo || m?.voterName || "member"}-${index}`}
                         className={`flex-row items-center p-4 ${index !== family?.members?.length - 1 ? "border-b border-gray-200" : ""
                             }`}
                     >

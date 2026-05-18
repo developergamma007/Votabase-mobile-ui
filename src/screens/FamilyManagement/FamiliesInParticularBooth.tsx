@@ -178,9 +178,9 @@ export default function Families() {
 
                 {/* Family List */}
                 {filteredFamilies.length > 0 &&
-                    filteredFamilies.map((item: any) => (
+                    filteredFamilies.map((item: any, familyIndex: number) => (
                         <TouchableOpacity
-                            key={item?.familyId?.toString()}
+                            key={`${String(item?.familyId || item?.familyName || "family")}-${familyIndex}`}
                             className={`${bgColors.white} p-4 rounded-2xl shadow-sm mb-3`}
                             onPress={() => (navigation as any).navigate("voterFamilyDetails", { family: item, associationName: getAssociationName(item.associationId), boothId:boothId })}
                         >

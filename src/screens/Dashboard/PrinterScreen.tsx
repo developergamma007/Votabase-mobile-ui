@@ -6,7 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
 import { AuthContext } from "../../context/AuthContext";
 import { PrinterHelper } from "../../components/PrinterHelper";
-import { Picker } from "@react-navigation/native"; // Using standard picker if available, else fallback
+import DropDownPicker from "react-native-dropdown-picker";
 
 export default function PrinterScreen() {
     const { userInfo } = useContext(AuthContext);
@@ -26,11 +26,26 @@ export default function PrinterScreen() {
     const [printTemplate, setPrintTemplate] = useState(null);
     const [templateLoading, setTemplateLoading] = useState(false);
     const [assemblyCode, setAssemblyCode] = useState('');
+    const [openAssembly, setOpenAssembly] = useState(false);
+    const [assemblyItems, setAssemblyItems] = useState<any[]>([]);
 
     useEffect(() => {
         const init = async () => {
             const code = await getAssemblyCode();
             setAssemblyCode(code);
+            try {
+                const dropdownResp = await CRUDAPI.getAssemblyDropdown();
+                const payload = dropdownResp?.data?.result || dropdownResp?.result || dropdownResp?.data || [];
+                const items = Array.isArray(payload)
+                    ? payload.map((a: any) => ({
+                        label: a?.name || a?.label || a?.assemblyName || `${a?.code || a?.assemblyCode || ''}`,
+                        value: String(a?.code || a?.assemblyCode || a?.id || code),
+                    }))
+                    : [];
+                setAssemblyItems(items.length ? items : [{ label: String(code), value: String(code) }]);
+            } catch {
+                setAssemblyItems([{ label: String(code), value: String(code) }]);
+            }
             loadWards(code);
 
             const saved = await AsyncStorage.getItem('connectedPrinter');
@@ -126,6 +141,20 @@ export default function PrinterScreen() {
     return (
         <View className="flex-1 bg-[#F4F3FF]">
             <ScrollView className="px-4 pt-6">
+                <View className="bg-white border border-slate-200 rounded-2xl px-4 py-3 mb-3 z-40">
+                    <Text className="text-slate-500 text-xs font-bold mb-1">CONTEXT</Text>
+                    <DropDownPicker
+                        open={openAssembly}
+                        value={assemblyCode}
+                        items={assemblyItems}
+                        setOpen={setOpenAssembly}
+                        setValue={setAssemblyCode}
+                        setItems={setAssemblyItems}
+                        style={{ borderColor: '#CBD5E1', minHeight: 46 }}
+                        dropDownContainerStyle={{ borderColor: '#CBD5E1' }}
+                        textStyle={{ fontSize: 15, fontWeight: '700', color: '#0f172a' }}
+                    />
+                </View>
                 <LinearGradient colors={["#0C7BB3", "#0796A1"]} className="rounded-2xl p-4 mb-5">
                     <View className="flex-row items-center justify-between">
                         <View>
@@ -154,9 +183,9 @@ export default function PrinterScreen() {
                 {printers.length > 0 && !connectedPrinter && (
                     <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm">
                         <Text className="text-gray-800 font-bold mb-3">Available Printers</Text>
-                        {printers.map((p) => (
+                        {printers.map((p, printerIndex) => (
                             <TouchableOpacity
-                                key={p.id}
+                                key={`${String(p?.id || p?.name || "printer")}-${printerIndex}`}
                                 onPress={() => handleConnect(p)}
                                 className="flex-row justify-between items-center py-3 border-b border-gray-100"
                             >
@@ -179,9 +208,9 @@ export default function PrinterScreen() {
                         <View className="border border-gray-200 rounded-lg overflow-hidden">
                             {/* Fallback to simple select logic if Picker is not available */}
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="p-2">
-                                {wards.map(w => (
+                                {wards.map((w, wardIndex) => (
                                     <TouchableOpacity
-                                        key={w.value}
+                                        key={`${String(w?.value || w?.label || "ward")}-${wardIndex}`}
                                         onPress={() => setSelectedWard(w.value)}
                                         className={`px-3 py-1.5 rounded-full mr-2 ${selectedWard === w.value ? 'bg-blue-600' : 'bg-gray-100'}`}
                                     >
@@ -197,9 +226,9 @@ export default function PrinterScreen() {
                             <Text className="text-gray-500 text-xs mb-1">Select Booth</Text>
                             <View className="border border-gray-200 rounded-lg overflow-hidden">
                                 <ScrollView horizontal showsHorizontalScrollIndicator={false} className="p-2">
-                                    {booths.map(b => (
+                                    {booths.map((b, boothIndex) => (
                                         <TouchableOpacity
-                                            key={b.value}
+                                            key={`${String(b?.value || b?.label || "booth")}-${boothIndex}`}
                                             onPress={() => setSelectedBooth(b.value)}
                                             className={`px-3 py-1.5 rounded-full mr-2 ${selectedBooth === b.value ? 'bg-blue-600' : 'bg-gray-100'}`}
                                         >
@@ -221,7 +250,7 @@ export default function PrinterScreen() {
                 {/* Search Voter */}
                 {loadingVoters ? <ActivityIndicator className="mt-4" /> : (
                     voters.map((v, i) => (
-                        <View key={v.epicNo || i} className="bg-white rounded-xl p-4 mb-3 border border-gray-100 flex-row justify-between items-center">
+                        <View key={`${String(v?.epicNo || v?.voterId || v?.serialNo || "voter")}-${i}`} className="bg-white rounded-xl p-4 mb-3 border border-gray-100 flex-row justify-between items-center">
                             <View className="flex-1">
                                 <Text className="font-bold text-gray-800">{v.firstMiddleNameEn || v.name}</Text>
                                 <Text className="text-gray-500 text-xs">Sl: {v.serialNo} · {v.epicNo}</Text>
@@ -258,5 +287,3 @@ export default function PrinterScreen() {
         </View>
     );
 }
-
-

@@ -114,7 +114,7 @@ export default function Logs() {
       )}
       {items && items.map((item, index) => (
         <View
-          key={index}
+          key={`${item?.id || item?.voter?.voterId || item?.title || "log"}-${item?.date || index}`}
           className={`${bgColors.white} border border-gray-200 rounded-xl p-4 mb-4 shadow-sm`}
         >
           <Text className="text-gray-800 text-base font-semibold mb-1">

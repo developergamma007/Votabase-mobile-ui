@@ -251,9 +251,9 @@ export default function AddFamilyDetails() {
                                 <Text className="text-[14px] text-slate-400 text-center">
                                     No family members yet
                                 </Text>
-                            ) : members.map((m) => (
+                            ) : members.map((m, index) => (
                                 <View
-                                    key={m.epicNo}
+                                    key={`${String(m?.epicNo || m?.memberId || m?.voterName || "member")}-${index}`}
                                     className={`${bgColors.white} border border-slate-200 rounded-xl px-3 py-2 mt-2`}
                                 >
                                     <Text className="text-[14px] font-semibold text-slate-700 mt-2">{m.voterName}</Text>
@@ -274,9 +274,9 @@ export default function AddFamilyDetails() {
 
                         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingBottom: 16 }}>
                             {members.length > 0 ? (
-                                members.map((m) => (
+                                members.map((m, index) => (
                                     <TouchableOpacity
-                                        key={m.memberId}
+                                        key={`${String(m?.memberId || m?.epicNo || m?.voterName || "member-chip")}-${index}`}
                                         onPress={() => setHeadId(m.memberId)}
                                         className={`px-3 py-2 rounded-lg border ${headId === m.memberId
                                             ? `${bgColors.blue600} border-blue-600`

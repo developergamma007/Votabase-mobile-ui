@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CACHE_PREFIX = 'vb_cache';
 const memoryCache = new Map();
+export const GOOGLE_MAPS_API_KEY = 'AIzaSyDiHCsapzJETTnhBIC7hFhTwmlWJJfnEg0';
 
 const getApiToken = async () => {
     try {
@@ -297,6 +298,22 @@ export const CRUDAPI = {
         }
     },
 
+    fetchFamilyLocationPoints: async (wardId) => {
+        try {
+            const response = await apiClient.get('/votebase/v1/api/family', { params: { page: 0, size: 500 } });
+            const payload = response?.data?.content || response?.data?.result || response?.data || [];
+            const list = Array.isArray(payload) ? payload : [];
+            const ward = wardId ? String(wardId) : '';
+            const filtered = ward
+                ? list.filter((item) => String(item?.wardId ?? item?.wardCode ?? item?.ward_id ?? '').trim() === ward)
+                : list;
+            return { data: { result: filtered } };
+        } catch (error) {
+            console.log('Error while fetching family map locations:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
     fetchMessageTemplate: async (wardId, channel, epicNo = null) => {
         try {
             const params = { channel };
@@ -306,6 +323,37 @@ export const CRUDAPI = {
             return response.data;
         } catch (error) {
             console.log('Error while fetching message template:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    fetchActivatedWards: async (assemblyId) => {
+        try {
+            const query = assemblyId ? `?assemblyId=${encodeURIComponent(assemblyId)}` : '';
+            const response = await apiClient.get(`/votebase/v1/api/message-template/activated-wards${query}`);
+            return response.data;
+        } catch (error) {
+            console.log('Error while fetching activated wards:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    saveMessageTemplate: async (payload) => {
+        try {
+            const response = await apiClient.put('/votebase/v1/api/message-template', payload);
+            return response.data;
+        } catch (error) {
+            console.log('Error while saving message template:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    deactivateAllTemplates: async (channel) => {
+        try {
+            const response = await apiClient.post(`/votebase/v1/api/message-template/deactivate-all?channel=${encodeURIComponent(channel)}`);
+            return response.data;
+        } catch (error) {
+            console.log('Error while deactivating templates:', error.response?.data || error.message);
             throw error;
         }
     },
@@ -398,6 +446,39 @@ export const CRUDAPI = {
             console.log('Error while creating meeting:', error.response?.data || error.message);
             throw error;
         }
+    },
+
+    recordMeetingAttendance: async (id) => {
+        try {
+            const response = await apiClient.post(`/votebase/v1/api/meetings/${id}/attendance`);
+            return response.data;
+        } catch (error) {
+            console.log('Error while recording meeting attendance:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    attendMeetingSelf: async (id, lat, lng) => {
+        try {
+            let url = `/votebase/v1/api/meetings/${id}/attend-self`;
+            if (lat !== null && lng !== null && lat !== undefined && lng !== undefined) {
+                url += `?lat=${lat}&lng=${lng}`;
+            }
+            const response = await apiClient.post(url);
+            return response.data;
+        } catch (error) {
+            console.log('Error while recording self attendance:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    fetchMeetingAttendance: async (id) => {
+        try {
+            const response = await apiClient.get(`/votebase/v1/api/meetings/${encodeURIComponent(id)}/attendance`);
+            return response.data;
+        } catch (error) {
+            console.log('Error while fetching meeting attendance:', error.response?.data || error.message);
+            throw error;
+        }
     }
 };
-

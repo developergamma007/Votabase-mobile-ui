@@ -446,11 +446,11 @@ export default function AddVolunteer() {
                                     />
                                 </View>
                                 <ScrollView style={styles.panelScroll} nestedScrollEnabled={true}>
-                                    {wards.filter(w => !searchWard || w.label.toLowerCase().includes(searchWard.toLowerCase())).map((item) => {
+                                    {wards.filter(w => !searchWard || w.label.toLowerCase().includes(searchWard.toLowerCase())).map((item, wardIndex) => {
                                         const isSelected = form.wardIds.includes(item.value);
                                         return (
                                             <TouchableOpacity 
-                                                key={item.value}
+                                                key={`${String(item?.value || item?.label || "ward")}-${wardIndex}`}
                                                 style={[styles.listItem, isSelected && styles.listItemSelected]} 
                                                 onPress={() => handleWardSelection(item.value)}
                                             >
@@ -495,11 +495,11 @@ export default function AddVolunteer() {
                                     />
                                 </View>
                                 <ScrollView style={styles.panelScroll} nestedScrollEnabled={true}>
-                                    {booths.filter(b => !searchBooth || b.label.toLowerCase().includes(searchBooth.toLowerCase())).map((item) => {
+                                    {booths.filter(b => !searchBooth || b.label.toLowerCase().includes(searchBooth.toLowerCase())).map((item, boothIndex) => {
                                         const isSelected = form.boothIds.includes(item.value);
                                         return (
                                             <TouchableOpacity 
-                                                key={item.value}
+                                                key={`${String(item?.value || item?.label || "booth")}-${boothIndex}`}
                                                 style={[styles.listItem, isSelected && styles.listItemSelected]} 
                                                 onPress={() => handleBoothSelection(item.value)}
                                             >

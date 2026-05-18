@@ -1,70 +1,98 @@
 import React, { useState, useEffect, useMemo, useRef, useContext } from "react";
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Switch } from "react-native";
+import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Switch } from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
-import { bgColors } from "../../constants/colors";
 import { AuthContext } from "../../context/AuthContext";
+import DropDownPicker from "react-native-dropdown-picker";
 
 export default function PollDayVoters() {
-  const { userInfo } = useContext(AuthContext);
+  const { userInfo } = useContext(AuthContext) as any;
   const [tab, setTab] = useState('ALL');
   const [natureFilter, setNatureFilter] = useState('');
   const [pollQuery, setPollQuery] = useState('');
   const [pollRelationQuery, setPollRelationQuery] = useState('');
+  const [pollSuggestions, setPollSuggestions] = useState<any[]>([]);
   const [pollLoading, setPollLoading] = useState(false);
-  const [pollVoters, setPollVoters] = useState([]);
+  const [showPollSuggestions, setShowPollSuggestions] = useState(false);
+  const [pollVoters, setPollVoters] = useState<any[]>([]);
   const [pollError, setPollError] = useState('');
   const [pollDayEnabled, setPollDayEnabled] = useState(false);
   const [globalPollDayEnabled, setGlobalPollDayEnabled] = useState(false);
-  const [assemblyCode, setAssemblyCode] = useState('');
-  const pollSearchTimerRef = useRef(null);
 
+  const [assemblyCode, setAssemblyCode] = useState('');
+  const [openAssembly, setOpenAssembly] = useState(false);
+  const [assemblyItems, setAssemblyItems] = useState<any[]>([]);
+
+  const [openNature, setOpenNature] = useState(false);
+  const [natureItems, setNatureItems] = useState([
+    { label: 'Nature', value: '' },
+    { label: 'A', value: 'A' },
+    { label: 'B', value: 'B' },
+    { label: 'C', value: 'C' },
+    { label: 'NA', value: 'NA' },
+  ]);
+
+  const pollSearchTimerRef = useRef<any>(null);
   const isSuperAdmin = userInfo?.userName === 'admin@iswot.io' || userInfo?.role === 'SUPER_ADMIN';
 
   useEffect(() => {
     const init = async () => {
       const code = await getAssemblyCode();
       setAssemblyCode(code);
-      checkActivation(code);
+      try {
+        const dropdownResp = await CRUDAPI.getAssemblyDropdown();
+        const payload = dropdownResp?.data?.result || dropdownResp?.result || dropdownResp?.data || [];
+        const items = Array.isArray(payload)
+          ? payload.map((a: any) => ({
+              label: a?.name || a?.label || a?.assemblyName || `${a?.code || a?.assemblyCode || ''}`,
+              value: String(a?.code || a?.assemblyCode || a?.id || code),
+            }))
+          : [];
+        setAssemblyItems(items.length ? items : [{ label: String(code), value: String(code) }]);
+      } catch {
+        setAssemblyItems([{ label: String(code), value: String(code) }]);
+      }
     };
     init();
   }, []);
 
-  const checkActivation = async (code) => {
-    try {
-      const globalConfig = await CRUDAPI.fetchPollDayConfig(null, null);
-      setGlobalPollDayEnabled(globalConfig.enabled);
+  useEffect(() => {
+    const checkActivation = async () => {
+      if (!assemblyCode) return;
+      try {
+        const globalConfig = await CRUDAPI.fetchPollDayConfig(null, null);
+        setGlobalPollDayEnabled(globalConfig.enabled);
+        const config = await CRUDAPI.fetchPollDayConfig(assemblyCode);
+        setPollDayEnabled(config.enabled);
+      } catch {
+        setPollDayEnabled(false);
+        setGlobalPollDayEnabled(false);
+      }
+    };
+    checkActivation();
+  }, [assemblyCode]);
 
-      const config = await CRUDAPI.fetchPollDayConfig(code);
-      setPollDayEnabled(config.enabled);
-    } catch (err) {
-      setPollDayEnabled(false);
-      setGlobalPollDayEnabled(false);
-    }
-  };
-
-  const handleToggleActivation = async (val) => {
+  const handleToggleActivation = async (val: boolean) => {
     try {
       await CRUDAPI.updatePollDayConfig(assemblyCode, null, val);
       setPollDayEnabled(val);
-    } catch (err) {
+    } catch {
       setPollError('Failed to update activation.');
     }
   };
 
-  const handleToggleGlobalActivation = async (val) => {
+  const handleToggleGlobalActivation = async (val: boolean) => {
     try {
       await CRUDAPI.updatePollDayConfig(null, null, val);
       setGlobalPollDayEnabled(val);
-      // Sync the assembly-specific toggle as well
       await CRUDAPI.updatePollDayConfig(assemblyCode, null, val);
       setPollDayEnabled(val);
-    } catch (err) {
+    } catch {
       setPollError('Failed to update global activation.');
     }
   };
 
-  const buildPollDisplay = (item) => {
+  const buildPollDisplay = (item: any) => {
     const name = [item.firstMiddleNameEn, item.lastNameEn].filter(Boolean).join(' ').trim();
     const rawStatus = item.votingStatus || item.voteStatus || item.status || item.votedStatus || '';
     const normalizedStatus = String(rawStatus).toUpperCase();
@@ -81,27 +109,12 @@ export default function PollDayVoters() {
     };
   };
 
-  const handleToggleVoted = async (voter, newStatus) => {
-    if (!pollDayEnabled && !globalPollDayEnabled) {
-      Alert.alert('Restricted', 'Poll Day is currently not active. Please enable activation.');
-      return;
-    }
-    try {
-      await CRUDAPI.updateVoterStatus(voter.epic, newStatus, voter.wardCode, voter.boothNo);
-      setPollVoters((prev) =>
-        prev.map((v) => (v.id === voter.id ? { ...v, votedStatus: newStatus } : v))
-      );
-    } catch (err) {
-      setPollError('Failed to update status.');
-    }
-  };
-
   const fetchPollVoters = async (queryValue = '') => {
     setPollLoading(true);
     setPollError('');
     try {
       const res = await CRUDAPI.searchVoters({
-        assemblyCode: assemblyCode,
+        assemblyCode,
         searchQuery: queryValue.trim() || undefined,
         relationName: pollRelationQuery.trim() || undefined,
         size: 200,
@@ -109,187 +122,148 @@ export default function PollDayVoters() {
       const payload = res?.data?.result || res?.result || res?.data || [];
       const list = Array.isArray(payload) ? payload : [];
       setPollVoters(list.map(buildPollDisplay));
-    } catch (error) {
+
+      const suggestions = list.slice(0, 8).map((item: any) => {
+        const suggestionName = [item.firstMiddleNameEn, item.lastNameEn].filter(Boolean).join(' ').trim();
+        return {
+          label: suggestionName || item.name || item.voterName || item.epicNo || 'Unknown',
+          epic: item.epicNo || item.epic || '',
+        };
+      });
+      setPollSuggestions(suggestions);
+    } catch {
       setPollError('Unable to load voters.');
       setPollVoters([]);
+      setPollSuggestions([]);
     } finally {
       setPollLoading(false);
     }
   };
 
   useEffect(() => {
+    if (!assemblyCode) return;
     if (pollSearchTimerRef.current) clearTimeout(pollSearchTimerRef.current);
     pollSearchTimerRef.current = setTimeout(() => {
       fetchPollVoters(pollQuery);
-    }, 500);
+    }, 450);
     return () => clearTimeout(pollSearchTimerRef.current);
   }, [pollQuery, pollRelationQuery, assemblyCode]);
 
+  const normalizeNature = (s: string) => {
+    const v = String(s || '').toUpperCase().trim();
+    if (['A', 'FAVOUR', 'FAVOR', 'SUPPORTER'].includes(v)) return 'A';
+    if (['B', 'NEUTRAL'].includes(v)) return 'B';
+    if (['C', 'NON-FAVOUR', 'NON-FAVOR', 'OPPOSITION'].includes(v)) return 'C';
+    if (v === 'NA') return 'NA';
+    return '';
+  };
+
   const filteredPollVoters = useMemo(() => {
     let list = [...pollVoters];
-    if (natureFilter) {
-      list = list.filter((v) => String(v.natureOfVoter || '').toUpperCase() === natureFilter);
-    }
-    if (tab === 'VOTED') {
-      list = list.filter((v) => {
-        const s = String(v.votedStatus).toUpperCase();
-        return s.includes('VOTED') && !s.includes('NOT');
-      });
-    } else if (tab === 'NOT VOTED') {
-      list = list.filter((v) => String(v.votedStatus).toUpperCase().includes('NOT'));
-    }
+    if (natureFilter) list = list.filter((v) => normalizeNature(v.natureOfVoter) === natureFilter);
+    if (tab === 'VOTED') list = list.filter((v) => String(v.votedStatus).toUpperCase().includes('VOTED') && !String(v.votedStatus).toUpperCase().includes('NOT'));
+    if (tab === 'NOT VOTED') list = list.filter((v) => String(v.votedStatus).toUpperCase().includes('NOT'));
     return list;
   }, [pollVoters, natureFilter, tab]);
 
-  const badgeColor = (status) => {
-    const s = String(status).toUpperCase();
-    if (s === 'FAVOUR') return 'bg-green-600';
-    if (s === 'NEUTRAL') return 'bg-gray-400';
-    return 'bg-red-600';
+  const handleToggleVoted = async (voter: any, newStatus: string) => {
+    if (!pollDayEnabled && !globalPollDayEnabled) {
+      setPollError('Poll Day is currently not active. Please enable activation using the checkbox above.');
+      return;
+    }
+    try {
+      await CRUDAPI.updateVoterStatus(voter.epic, newStatus, voter.wardCode, voter.boothNo);
+      setPollVoters((prev) => prev.map((v) => (v.id === voter.id ? { ...v, votedStatus: newStatus } : v)));
+    } catch {
+      setPollError('Failed to update status.');
+    }
   };
 
   return (
-    <View className="flex-1 bg-gray-50">
-      {/* ADMIN CONTROLS */}
-      {isSuperAdmin && (
-        <View className="bg-white px-4 py-3 border-b border-gray-200">
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="font-bold text-gray-700">Global Activation</Text>
-            <Switch
-              value={globalPollDayEnabled}
-              onValueChange={handleToggleGlobalActivation}
-              trackColor={{ false: "#767577", true: "#81b0ff" }}
-              thumbColor={globalPollDayEnabled ? "#2563eb" : "#f4f3f4"}
-            />
+    <View className="flex-1 bg-[#EEF3FB]">
+      <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 120 }}>
+        <View className="bg-white border border-slate-200 rounded-2xl px-4 py-3 mb-3 z-30">
+          <Text className="text-slate-500 text-xs font-bold mb-1">CONTEXT</Text>
+          <DropDownPicker open={openAssembly} value={assemblyCode} items={assemblyItems} setOpen={setOpenAssembly} setValue={setAssemblyCode} setItems={setAssemblyItems} style={{ borderColor: '#CBD5E1', minHeight: 46 }} dropDownContainerStyle={{ borderColor: '#CBD5E1' }} textStyle={{ fontSize: 15, fontWeight: '700', color: '#0f172a' }} />
+        </View>
+
+        {isSuperAdmin ? (
+          <View className="bg-white border border-slate-200 rounded-2xl px-4 py-3 mb-3">
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="font-bold text-slate-800 text-[13px]">Global Activation</Text>
+              <Switch value={globalPollDayEnabled} onValueChange={handleToggleGlobalActivation} />
+            </View>
+            <View className="flex-row items-center justify-between">
+              <Text className="font-bold text-slate-800 text-[13px]">Assembly Activation</Text>
+              <Switch value={pollDayEnabled} onValueChange={handleToggleActivation} />
+            </View>
           </View>
-          <View className="flex-row items-center justify-between">
-            <Text className="font-bold text-gray-700">Assembly Activation</Text>
-            <Switch
-              value={pollDayEnabled}
-              onValueChange={handleToggleActivation}
-              trackColor={{ false: "#767577", true: "#81b0ff" }}
-              thumbColor={pollDayEnabled ? "#2563eb" : "#f4f3f4"}
-            />
+        ) : null}
+
+        {!isSuperAdmin && !pollDayEnabled && !globalPollDayEnabled ? (
+          <View className="bg-amber-50 p-3 border border-amber-200 rounded-2xl mb-3">
+            <Text className="text-amber-800 text-[12px]">Poll Day is currently inactive. Please contact Admin for activation.</Text>
           </View>
-        </View>
-      )}
+        ) : null}
 
-      {!isSuperAdmin && !pollDayEnabled && !globalPollDayEnabled && (
-        <View className="bg-amber-50 p-4 border-b border-amber-200">
-          <Text className="text-amber-800 font-medium text-center">
-            Poll Day is currently inactive. Please contact Admin.
-          </Text>
-        </View>
-      )}
-
-      {/* SEARCH */}
-      <View className="px-4 pt-3">
-        <View className="bg-white border border-gray-200 rounded-lg px-3 py-2 flex-row items-center">
-          <Icon name="search" size={20} color="#94a3b8" />
-          <TextInput
-            className="flex-1 ml-2 text-black"
-            placeholder="Search name / EPIC / phone"
-            value={pollQuery}
-            onChangeText={setPollQuery}
-          />
+        <View className="bg-white border border-slate-200 rounded-xl px-3 py-2 flex-row items-center">
+          <Icon name="search" size={18} color="#94a3b8" />
+          <TextInput className="flex-1 ml-2 text-black text-[13px]" placeholder="Search voter by EPIC or name" value={pollQuery} onChangeText={(v) => { setPollQuery(v); setShowPollSuggestions(true); }} onFocus={() => setShowPollSuggestions(true)} />
         </View>
 
-        <View className="flex-row space-x-2 mt-3">
-          {["ALL", "VOTED", "NOT VOTED"].map((f) => (
-            <TouchableOpacity
-              key={f}
-              onPress={() => setTab(f)}
-              className={`border px-4 py-2 rounded-full mr-2 ${tab === f ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-200'}`}
-            >
-              <Text className={`font-medium ${tab === f ? 'text-white' : 'text-gray-700'}`}>{f}</Text>
+        {showPollSuggestions ? (
+          <View className="mt-2 bg-white border border-slate-200 rounded-xl overflow-hidden">
+            {!pollLoading && pollSuggestions.length === 0 ? <Text className="px-3 py-3 text-slate-400 text-[12px]">No suggestions</Text> : null}
+            {pollSuggestions.map((s: any, idx: number) => (
+              <TouchableOpacity key={`${s.epic || 'suggest'}-${idx}`} className="px-3 py-2 border-t border-slate-100" onPress={() => { setPollQuery(s.label); setShowPollSuggestions(false); }}>
+                <Text className="text-slate-800 text-[13px] font-semibold">{s.label}</Text>
+                <Text className="text-slate-500 text-[11px]">{s.epic || '-'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
+        <View className="flex-row mt-3">
+          {['ALL', 'VOTED', 'NOT VOTED'].map((f) => (
+            <TouchableOpacity key={f} onPress={() => setTab(f)} className={`border px-4 py-2 rounded-full mr-2 ${tab === f ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-200'}`}>
+              <Text className={`font-semibold text-[12px] ${tab === f ? 'text-white' : 'text-slate-700'}`}>{f}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        <View className="flex-row space-x-2 mt-3">
-          {["", "FAVOUR", "NEUTRAL", "NON-FAVOUR"].map((n) => (
-            <TouchableOpacity
-              key={n}
-              onPress={() => setNatureFilter(n)}
-              className={`border px-3 py-1.5 rounded-lg mr-2 ${natureFilter === n ? 'bg-indigo-100 border-indigo-400' : 'bg-white border-gray-100'}`}
-            >
-              <Text className={`text-[10px] font-bold ${natureFilter === n ? 'text-indigo-700' : 'text-gray-500'}`}>{n || 'ALL NATURE'}</Text>
-            </TouchableOpacity>
-          ))}
+        <View className="mt-3 z-20">
+          <DropDownPicker open={openNature} value={natureFilter} items={natureItems} setOpen={setOpenNature} setValue={setNatureFilter} setItems={setNatureItems} style={{ borderColor: '#CBD5E1', minHeight: 42 }} dropDownContainerStyle={{ borderColor: '#CBD5E1' }} />
         </View>
-      </View>
 
-      {/* LIST */}
-      <ScrollView className="px-4 mt-4" contentContainerStyle={{ paddingBottom: 140 }}>
-        {pollLoading && <ActivityIndicator size="large" color="#2563eb" className="mt-4" />}
-        {pollError ? <Text className="text-red-600 text-center mt-4">{pollError}</Text> : null}
-        
-        {!pollLoading && filteredPollVoters.length === 0 && (
-          <Text className="text-gray-500 text-center mt-10">No voters found.</Text>
-        )}
+        {pollLoading ? <ActivityIndicator size="large" color="#2563eb" className="mt-4" /> : null}
+        {pollError ? <Text className="text-red-600 mt-3 text-[12px]">{pollError}</Text> : null}
 
-        {filteredPollVoters.map((v, i) => (
-          <View key={v.id} className="bg-white rounded-xl p-4 mb-4 border border-gray-100 shadow-sm">
-            <View className="flex-row justify-between">
-              <View className="flex-row flex-1">
-                <View className="h-10 w-10 bg-blue-100 rounded-full items-center justify-center mr-3">
-                  <Text className="text-blue-700 font-bold">{v.name.charAt(0)}</Text>
+        <View className="mt-3">
+          {filteredPollVoters.map((v, idx) => (
+            <View key={`${String(v?.id || v?.epic || v?.name || "poll-voter")}-${idx}`} className="bg-white rounded-xl p-4 mb-3 border border-slate-200">
+              <View className="flex-row">
+                <View className="h-10 w-10 bg-blue-600 rounded-full items-center justify-center mr-3">
+                  <Text className="text-white font-bold text-[16px]">{String(v.name || 'U').charAt(0)}</Text>
                 </View>
-
                 <View className="flex-1">
-                  <Text className="font-bold text-base text-gray-800">{v.name}</Text>
-                  <Text className="text-gray-500 text-sm">
-                    {v.epic} · {v.phone || 'No Phone'}
-                  </Text>
-
-                  <View className="flex-row mt-1 items-center">
-                    <View className={`px-2 py-0.5 rounded-full ${badgeColor(v.natureOfVoter)} mr-2`}>
-                      <Text className="text-white text-[10px] font-bold">{v.natureOfVoter || 'N/A'}</Text>
-                    </View>
-                    <View className="bg-gray-100 px-2 py-0.5 rounded-full">
-                      <Text className="text-gray-600 text-[10px]">Booth {v.boothNo}</Text>
-                    </View>
+                  <Text className="font-extrabold text-[15px] text-slate-900">{v.name}</Text>
+                  <Text className="text-slate-500 text-[12px]">{v.epic}</Text>
+                  <Text className="text-slate-500 text-[12px]">{v.houseNo || '-'}</Text>
+                  <View className="flex-row mt-1">
+                    <View className="mr-2 px-2 py-0.5 rounded-full bg-slate-200"><Text className="text-slate-700 text-[10px] font-bold">{normalizeNature(v.natureOfVoter) || 'NA'}</Text></View>
+                    <View className="px-2 py-0.5 rounded-full bg-slate-200"><Text className="text-slate-700 text-[10px] font-bold">{v.boothNo || '-'}</Text></View>
+                  </View>
+                  <View className="flex-row mt-3">
+                    <TouchableOpacity onPress={() => handleToggleVoted(v, 'VOTED')} className="mr-2 border border-slate-300 rounded-full px-4 py-1.5"><Text className="font-bold text-[12px]">VOTED</Text></TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleToggleVoted(v, 'NOT VOTED')} className="border border-slate-300 rounded-full px-4 py-1.5"><Text className="font-bold text-[12px]">NOT VOTED</Text></TouchableOpacity>
                   </View>
                 </View>
               </View>
-
-              <View className="flex-row items-center">
-                <TouchableOpacity 
-                  onPress={() => handleToggleVoted(v, 'VOTED')}
-                  className={`px-3 py-1.5 rounded-md mr-2 border ${v.votedStatus === 'VOTED' ? 'bg-green-600 border-green-600' : 'bg-white border-green-600'}`}
-                >
-                  <Text className={`text-xs font-bold ${v.votedStatus === 'VOTED' ? 'text-white' : 'text-green-600'}`}>VOTED</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  onPress={() => handleToggleVoted(v, 'NOT VOTED')}
-                  className={`px-3 py-1.5 rounded-md border ${v.votedStatus === 'NOT VOTED' ? 'bg-red-600 border-red-600' : 'bg-white border-red-600'}`}
-                >
-                  <Text className={`text-xs font-bold ${v.votedStatus === 'NOT VOTED' ? 'text-white' : 'text-red-600'}`}>NOT</Text>
-                </TouchableOpacity>
-              </View>
             </View>
-          </View>
-        ))}
+          ))}
+          {!pollLoading && filteredPollVoters.length === 0 ? <Text className="text-slate-400 text-center mt-6 text-[12px]">No voters found.</Text> : null}
+        </View>
       </ScrollView>
-
-      {/* BOTTOM ACTION BAR */}
-      <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4 flex-row">
-        <TouchableOpacity 
-          onPress={() => setTab('NOT VOTED')}
-          className="flex-1 mr-2 border border-blue-600 rounded-xl py-3"
-        >
-          <Text className="text-blue-600 font-bold text-center">Show Not Voted</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          onPress={() => fetchPollVoters(pollQuery)}
-          className="flex-1 ml-2 bg-blue-600 rounded-xl py-3"
-        >
-          <Text className="text-white font-bold text-center">Refresh List</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
-

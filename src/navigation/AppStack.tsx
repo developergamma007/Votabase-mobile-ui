@@ -28,6 +28,7 @@ import VoterDetails from '../screens/VotersManagement/VoterDetailsNew';
 import Meetings from '../screens/Dashboard/Meetings';
 import PrinterScreen from '../screens/Dashboard/PrinterScreen';
 import PollDayVoters from '../screens/Dashboard/PollDay';
+import Promotions from '../screens/Dashboard/Promotions';
 
 const Stack = createNativeStackNavigator();
 
@@ -50,16 +51,21 @@ export default function AppStack() {
       onPress={onPress}
       activeOpacity={0.7}
       style={{
-        width: 44,
-        height: 44,
+        paddingHorizontal: 4,
+        paddingVertical: 2,
         justifyContent: 'center',
         alignItems: 'center',
-        marginLeft: 2,
+        marginLeft: 0,
         marginTop: -2,
         backgroundColor: 'transparent',
+        borderWidth: 0,
+        borderColor: 'transparent',
+        borderRadius: 0,
+        shadowOpacity: 0,
+        elevation: 0,
       }}
     >
-      <Ionicons name="menu-outline" size={28} color="#FFFFFF" />
+      <Ionicons name="menu-outline" size={28} color="#FFFFFF" style={{ backgroundColor: 'transparent' }} />
     </TouchableOpacity>
   );
 
@@ -68,16 +74,21 @@ export default function AppStack() {
       onPress={() => navigation.navigate('Profile' as never)}
       activeOpacity={0.7}
       style={{
-        width: 35,
-        height: 35,
+        paddingHorizontal: 4,
+        paddingVertical: 2,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 0,
         marginTop: -2,
         backgroundColor: 'transparent',
+        borderWidth: 0,
+        borderColor: 'transparent',
+        borderRadius: 0,
+        shadowOpacity: 0,
+        elevation: 0,
       }}
     >
-      <Ionicons name="person-outline" size={26} color="#FFFFFF" />
+      <Ionicons name="person-outline" size={26} color="#FFFFFF" style={{ backgroundColor: 'transparent' }} />
     </TouchableOpacity>
   );
 
@@ -86,16 +97,21 @@ export default function AppStack() {
       onPress={() => navigation.goBack()}
       activeOpacity={0.7}
       style={{
-        width: 44,
-        height: 44,
+        paddingHorizontal: 4,
+        paddingVertical: 2,
         justifyContent: 'center',
         alignItems: 'center',
         marginLeft: 0,
         marginTop: -2,
         backgroundColor: 'transparent',
+        borderWidth: 0,
+        borderColor: 'transparent',
+        borderRadius: 0,
+        shadowOpacity: 0,
+        elevation: 0,
       }}
     >
-      <Ionicons name="chevron-back-outline" size={28} color="#FFFFFF" />
+      <Ionicons name="chevron-back-outline" size={28} color="#FFFFFF" style={{ backgroundColor: 'transparent' }} />
     </TouchableOpacity>
   );
 
@@ -149,6 +165,14 @@ export default function AppStack() {
         screenOptions={{
           headerBackground: () => <HeaderGradient />,
           headerStyle: { backgroundColor: 'transparent' },
+          headerLeftContainerStyle: {
+            backgroundColor: 'transparent',
+            paddingLeft: 12,
+          },
+          headerRightContainerStyle: {
+            backgroundColor: 'transparent',
+            paddingRight: 12,
+          },
           headerTintColor: "#FFFFFF",
           headerTitleAlign: "center",
           headerTitleStyle: {
@@ -181,14 +205,15 @@ export default function AppStack() {
         <Stack.Screen name="Logs" component={Logs} options={{ title: "Activity Logs" }} />
         <Stack.Screen name="Settings" component={Settings} options={{ title: "App Settings" }} />
         <Stack.Screen name="addVolunteer" component={AddVolunteer} options={{ title: "Add Volunteer" }} />
-        <Stack.Screen name="myVolunteers" component={MyVolunteers} options={{ title: "My Volunteers" }} />
+        <Stack.Screen name="myVolunteers" component={MyVolunteers} options={{ title: "Manage Volunteers" }} />
         <Stack.Screen name="volunteerAnalysis" component={VolunteerAnalysis} options={{ title: "Analysis" }} />
         <Stack.Screen name="addFamilyDetails" component={AddFamilyDetails} options={{ title: "Family Details" }} />
         <Stack.Screen name="boothForFamily" component={BoothForFamily} options={{ title: "Select Booth" }} />
         <Stack.Screen name="families" component={Families} options={{ title: "Families List" }} />
         <Stack.Screen name="voterFamilyDetails" component={VoterFamilyDetails} options={{ title: "Family Info" }} />
         <Stack.Screen name="meetings" component={Meetings} options={{ title: "Meetings" }} />
-        <Stack.Screen name="pollDay" component={PollDayVoters} options={{ title: "Poll Day Control" }} />
+        <Stack.Screen name="pollDay" component={PollDayVoters} options={{ title: "Poll Day" }} />
+        <Stack.Screen name="promotions" component={Promotions} options={{ title: "Promotions" }} />
         <Stack.Screen name="print" component={PrinterScreen} options={{ title: "Thermal Print" }} />
       </Stack.Navigator>
     </>

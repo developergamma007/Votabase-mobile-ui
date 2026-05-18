@@ -18,7 +18,15 @@ type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 
 export default function LandingPage({ navigation }: Props) {
   const { userInfo } = useContext(AuthContext) as any;
-  const firstName = userInfo?.name?.split(' ')[0] || 'Member';
+  const resolvedName =
+    userInfo?.name ||
+    userInfo?.firstName ||
+    userInfo?.userName ||
+    userInfo?.email ||
+    '';
+  const firstName = resolvedName
+    ? String(resolvedName).split('@')[0].split(' ')[0]
+    : 'Member';
 
   const renderGridItem = (title: string, icon: string, route: string, color: string) => (
     <TouchableOpacity 
@@ -85,6 +93,13 @@ export default function LandingPage({ navigation }: Props) {
             "checkbox", 
             "pollDay", 
             "#EF4444"
+          )}
+          {renderWideCard(
+            "Promotions",
+            "Configure WhatsApp/SMS campaigns ward-wise.",
+            "megaphone",
+            "promotions",
+            "#0EA5E9"
           )}
           {renderWideCard(
             "Print", 

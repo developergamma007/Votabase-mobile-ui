@@ -33,12 +33,29 @@ export default function SidebarModal({ visible, onClose }) {
     const menuItems = [
         { label: "Home", icon: "home-outline", action: () => { onClose(); navigation.navigate("Home" as any); } },
         { label: "Add Volunteer", icon: "person-add-outline", action: () => { onClose(); navigation.navigate("addVolunteer" as any); } },
-        { label: "My Volunteers", icon: "people-outline", action: () => { onClose(); navigation.navigate("myVolunteers" as any); } },
+        { label: "Manage Volunteers", icon: "people-outline", action: () => { onClose(); navigation.navigate("myVolunteers" as any); } },
         { label: "Volunteer Analysis", icon: "bar-chart-outline", action: () => { onClose(); navigation.navigate("volunteerAnalysis" as any); } },
+        { label: "Voters Family", icon: "people-circle-outline", action: () => { onClose(); navigation.navigate("boothForFamily" as any); } },
         { label: "Logs", icon: "document-text-outline", action: () => { onClose(); navigation.navigate("Logs" as any); } },
         { label: "Settings", icon: "settings-outline", action: () => { onClose(); navigation.navigate("Settings" as any); } },
         { label: "Exit", icon: "exit-outline", action: logout, isExit: true },
     ];
+
+    const displayName =
+        (userInfo as any)?.name ||
+        (userInfo as any)?.firstName ||
+        (userInfo as any)?.userName ||
+        'User';
+    const displayEmail =
+        (userInfo as any)?.email ||
+        (userInfo as any)?.userName ||
+        '';
+    const rawRole =
+        String((userInfo as any)?.role || (userInfo as any)?.assignmentType || 'USER')
+            .replace(/^ROLE_/, '')
+            .toUpperCase();
+    const displayRole = `${rawRole} Account`;
+    const initialSeed = displayEmail || displayName || 'U';
 
     return (
         <Modal transparent visible={visible} animationType="none">
@@ -59,12 +76,16 @@ export default function SidebarModal({ visible, onClose }) {
                         <View style={styles.header}>
                             <View style={styles.profileCircle}>
                                 <Text style={styles.profileInitial}>
-                                    {(userInfo as any)?.name?.charAt(0) || 'U'}
+                                    {initialSeed.charAt(0).toUpperCase()}
                                 </Text>
                             </View>
                             <View style={styles.headerInfo}>
-                                <Text style={styles.userName}>{(userInfo as any)?.name || 'User'}</Text>
-                                <Text style={styles.userRole}>Volunteer Access</Text>
+                                <Text style={styles.userName} numberOfLines={1}>
+                                    {displayEmail || displayName}
+                                </Text>
+                                <Text style={styles.userRole} numberOfLines={1}>
+                                    {displayRole}
+                                </Text>
                             </View>
                             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                                 <Ionicons name="close" size={24} color="#94A3B8" />
@@ -77,7 +98,7 @@ export default function SidebarModal({ visible, onClose }) {
                         <View style={styles.menuContainer}>
                             {menuItems.map((item, index) => (
                                 <TouchableOpacity 
-                                    key={index} 
+                                    key={`${item.label}-${index}`} 
                                     style={[styles.menuItem, item.isExit && styles.exitItem]} 
                                     onPress={item.action}
                                 >
