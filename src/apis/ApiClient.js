@@ -36,8 +36,26 @@ apiClient.interceptors.request.use(
 
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    console.log('API Error:', error );
+  async (error) => {
+    const status = error?.response?.status;
+    const detail = error?.response?.data?.detail;
+    const blocked =
+      status === 403 ||
+      detail === 'Please contact Admin' ||
+      String(detail || '').toLowerCase().includes('blocked');
+
+    if (blocked) {
+      await AsyncStorage.multiRemove([
+        'token',
+        'X_INIT_TOKEN',
+        'userInfo',
+        'role',
+        'tenantId',
+        'assemblyCode',
+      ]);
+    }
+
+    console.log('API Error:', error);
     return Promise.reject(error);
   }
 );

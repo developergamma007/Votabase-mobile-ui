@@ -1,20 +1,20 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthContext } from '../context/AuthContext';
-import { bgColors } from '../constants/colors';
+import { PremiumScreen, PremiumCard, PremiumSectionTitle } from '../components/PremiumUI';
+import { premium } from '../constants/premiumTheme';
 
-const LANG_KEY = "app_language";
+const LANG_KEY = 'app_language';
 
 export default function Settings() {
-  const { setBanner, clearLocal } = useContext(AuthContext)
-  const [language, setLanguage] = useState(''); // default English
+  const { setBanner, clearLocal } = useContext(AuthContext);
+  const [language, setLanguage] = useState('');
 
-  const saveLanguage = async (lang) => {
+  const saveLanguage = async (lang: string) => {
     setLanguage(lang);
     try {
       await AsyncStorage.setItem(LANG_KEY, lang);
-      console.log('Language saved:', lang);
     } catch (e) {
       console.error('Failed to save language', e);
     }
@@ -22,49 +22,90 @@ export default function Settings() {
 
   useEffect(() => {
     const loadLanguage = async () => {
-      const language = await AsyncStorage.getItem(LANG_KEY);
-      setLanguage(language)
-    }
-    loadLanguage()
-  }, [])
+      const stored = await AsyncStorage.getItem(LANG_KEY);
+      if (stored) setLanguage(stored);
+    };
+    loadLanguage();
+  }, []);
 
-  const showBanner = (type, message) => {
+  const showBanner = (type: 'success' | 'error', message: string) => {
     setBanner({ type, message });
   };
 
   return (
-    <View className={`flex-1 ${bgColors.white} p-4`}>
-      <Text className="text-lg font-semibold mb-2 text-gray-700">Select Language</Text>
-      <View className="flex-row space-x-4">
-        <TouchableOpacity
-          className={`flex-1 py-3 rounded-lg mr-3 border ${language === 'en' ? `${bgColors.blue500} border-blue-500` : `${bgColors.white} border-gray-300`
-            }`}
-          onPress={() => { saveLanguage('en'), showBanner('success', 'Language updated successfully') }}
-        >
-          <Text className={`text-center font-semibold ${language === 'en' ? 'text-white' : 'text-gray-800'}`}>English</Text>
-        </TouchableOpacity>
+    <PremiumScreen>
+      <PremiumSectionTitle title="Settings" subtitle="Language and local data" />
 
-        <TouchableOpacity
-          className={`flex-1 py-3 rounded-lg border ${language === 'kn' ? `${bgColors.blue500} border-blue-500` : `${bgColors.white} border-gray-300`
-            }`}
-          onPress={() => { saveLanguage('kn'), showBanner('success', 'Language updated successfully') }}
-        >
-          <Text className={`text-center font-semibold ${language === 'kn' ? 'text-white' : 'text-gray-800'}`}>Native</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Text className="mt-6 text-gray-600">
-        Current selected language: {language === 'en' ? 'English' : 'Native'}
-      </Text>
-      <Text className="text-lg font-semibold mb-2 text-gray-700 mt-10"> Clear local data and reload the data from server</Text>
-      <TouchableOpacity
-        className={`${bgColors.red600} px-4 py-3 rounded-lg mb-10 mt-2`}
-        onPress={clearLocal}
-      >
-        <Text className="text-white text-center font-semibold">
-          Clear
+      <PremiumCard>
+        <Text style={styles.label}>Select language</Text>
+        <View style={styles.langRow}>
+          <TouchableOpacity
+            style={[styles.langBtn, language === 'en' && styles.langBtnActive]}
+            onPress={() => {
+              saveLanguage('en');
+              showBanner('success', 'Language updated successfully');
+            }}
+          >
+            <Text style={[styles.langText, language === 'en' && styles.langTextActive]}>English</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.langBtn, language === 'kn' && styles.langBtnActive]}
+            onPress={() => {
+              saveLanguage('kn');
+              showBanner('success', 'Language updated successfully');
+            }}
+          >
+            <Text style={[styles.langText, language === 'kn' && styles.langTextActive]}>Native</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.hint}>
+          Current: {language === 'en' ? 'English' : language === 'kn' ? 'Native' : 'Not set'}
         </Text>
-      </TouchableOpacity>
-    </View>
+      </PremiumCard>
+
+      <PremiumCard>
+        <Text style={styles.label}>Local cache</Text>
+        <Text style={styles.hint}>
+          Clears stored voter snapshots and reloads from the server on next sync.
+        </Text>
+        <TouchableOpacity style={styles.dangerBtn} onPress={clearLocal}>
+          <Text style={styles.dangerBtnText}>Clear local data</Text>
+        </TouchableOpacity>
+      </PremiumCard>
+    </PremiumScreen>
   );
 }
+
+const styles = StyleSheet.create({
+  label: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: premium.text,
+    marginBottom: 12,
+  },
+  langRow: { flexDirection: 'row', gap: 12 },
+  langBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: premium.radius.md,
+    borderWidth: 1,
+    borderColor: premium.border,
+    alignItems: 'center',
+    backgroundColor: premium.bg,
+  },
+  langBtnActive: {
+    backgroundColor: premium.primary,
+    borderColor: premium.primary,
+  },
+  langText: { fontWeight: '600', color: premium.text },
+  langTextActive: { color: '#fff' },
+  hint: { marginTop: 12, fontSize: 13, color: premium.textMuted, lineHeight: 18 },
+  dangerBtn: {
+    marginTop: 16,
+    backgroundColor: premium.error,
+    paddingVertical: 14,
+    borderRadius: premium.radius.md,
+    alignItems: 'center',
+  },
+  dangerBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+});

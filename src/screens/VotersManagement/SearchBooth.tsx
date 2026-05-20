@@ -43,7 +43,7 @@ export default function SearchBooth() {
       if (res?.data?.result) {
         setAsmItems(res.data.result.map(a => ({
           label: `${a.name} (${a.id})`,
-          value: a.code?.length || String(a.id)
+          value: a.code || String(a.id)
         })));
       }
     } catch (err) {
@@ -158,18 +158,24 @@ export default function SearchBooth() {
   };
 
   const openBooth = async (booth) => {
+    const cachedVoters = booth?.voters || [];
+    if (cachedVoters.length > 0) {
+      navigation.navigate('Search Voter', { booth });
+      return;
+    }
     try {
       setLoadingBoothId(booth.boothId);
-      const response = await CRUDAPI.fetchBoothVoters(booth.boothId);
-      const boothPayload = response?.data?.result;
+      const boothNo = booth.boothNo ?? (booth.boothId >= 10000 ? booth.boothId % 10000 : undefined);
+      const response = await CRUDAPI.fetchBoothVoters(booth.boothId, booth.wardId, boothNo);
+      const boothPayload = response?.data?.result ?? response?.result;
       if (boothPayload) {
-        navigation.navigate("Search Voter", { booth: boothPayload });
+        navigation.navigate('Search Voter', { booth: boothPayload });
         return;
       }
-      navigation.navigate("Search Voter", { booth });
+      navigation.navigate('Search Voter', { booth });
     } catch (error) {
       console.log('Failed to fetch booth voters, opening cached booth data:', error?.message || error);
-      navigation.navigate("Search Voter", { booth });
+      navigation.navigate('Search Voter', { booth });
     } finally {
       setLoadingBoothId(null);
     }
@@ -189,18 +195,20 @@ export default function SearchBooth() {
         <View style={styles.contextRow}>
           <Text style={styles.contextLabel}>CONTEXT</Text>
           <View style={{ flex: 1 }}>
-            <DropDownPicker
-              open={openAsm}
-              value={selectedAsm}
-              items={asmItems}
-              setOpen={setOpenAsm}
-              setValue={setSelectedAsm}
-              onSelectItem={(item) => fetchSnapshotFromApi(item.value)}
-              placeholder="Select Assembly"
-              style={styles.dropdown}
-              dropDownContainerStyle={styles.dropdownPanel}
-              listMode="SCROLLVIEW"
-            />
+              <DropDownPicker
+                open={openAsm}
+                value={selectedAsm}
+                items={asmItems}
+                setOpen={setOpenAsm}
+                setValue={setSelectedAsm}
+                onSelectItem={(item) => fetchSnapshotFromApi(item.value)}
+                placeholder="Select Assembly"
+                style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
+                dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+                textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
+                placeholderStyle={{ color: '#94A3B8' }}
+                listMode="SCROLLVIEW"
+              />
           </View>
         </View>
       </View>
@@ -231,8 +239,10 @@ export default function SearchBooth() {
                   setOpen={setOpenWard}
                   setValue={setSelectedWard}
                   placeholder="Select Ward"
-                  style={styles.dropdown}
-                  dropDownContainerStyle={[styles.dropdownPanel, { zIndex: 5000 }]}
+                  style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
+                  dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, zIndex: 5000 }}
+                  textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
+                  placeholderStyle={{ color: '#94A3B8' }}
                   listMode="SCROLLVIEW"
                 />
               </View>

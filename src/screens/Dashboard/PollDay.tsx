@@ -1,39 +1,54 @@
-import React, { useState, useEffect, useMemo, useRef, useContext } from "react";
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Switch } from "react-native";
+import React, { useState, useEffect, useMemo, useRef, useContext, useCallback } from "react";
+import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Switch, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
 import { AuthContext } from "../../context/AuthContext";
 import DropDownPicker from "react-native-dropdown-picker";
 
+const POLL_PAGE_SIZE = 100;
+
+function isPollVotedStatus(status: string) {
+  const s = String(status || "").toUpperCase();
+  return s.includes("VOTED") && !s.includes("NOT");
+}
+
+function isPollNotVotedStatus(status: string) {
+  return String(status || "").toUpperCase().includes("NOT");
+}
+
 export default function PollDayVoters() {
   const { userInfo } = useContext(AuthContext) as any;
-  const [tab, setTab] = useState('ALL');
-  const [natureFilter, setNatureFilter] = useState('');
-  const [pollQuery, setPollQuery] = useState('');
-  const [pollRelationQuery, setPollRelationQuery] = useState('');
+  const [tab, setTab] = useState("ALL");
+  const [natureFilter, setNatureFilter] = useState("");
+  const [pollQuery, setPollQuery] = useState("");
+  const [pollRelationQuery, setPollRelationQuery] = useState("");
   const [pollSuggestions, setPollSuggestions] = useState<any[]>([]);
   const [pollLoading, setPollLoading] = useState(false);
+  const [pollLoadingMore, setPollLoadingMore] = useState(false);
   const [showPollSuggestions, setShowPollSuggestions] = useState(false);
   const [pollVoters, setPollVoters] = useState<any[]>([]);
-  const [pollError, setPollError] = useState('');
+  const [pollPage, setPollPage] = useState(0);
+  const [pollHasMore, setPollHasMore] = useState(false);
+  const [pollMeta, setPollMeta] = useState<any>(null);
+  const [pollError, setPollError] = useState("");
   const [pollDayEnabled, setPollDayEnabled] = useState(false);
   const [globalPollDayEnabled, setGlobalPollDayEnabled] = useState(false);
 
-  const [assemblyCode, setAssemblyCode] = useState('');
+  const [assemblyCode, setAssemblyCode] = useState("");
   const [openAssembly, setOpenAssembly] = useState(false);
   const [assemblyItems, setAssemblyItems] = useState<any[]>([]);
 
   const [openNature, setOpenNature] = useState(false);
   const [natureItems, setNatureItems] = useState([
-    { label: 'Nature', value: '' },
-    { label: 'A', value: 'A' },
-    { label: 'B', value: 'B' },
-    { label: 'C', value: 'C' },
-    { label: 'NA', value: 'NA' },
+    { label: "Nature", value: "" },
+    { label: "A", value: "A" },
+    { label: "B", value: "B" },
+    { label: "C", value: "C" },
+    { label: "NA", value: "NA" },
   ]);
 
   const pollSearchTimerRef = useRef<any>(null);
-  const isSuperAdmin = userInfo?.userName === 'admin@iswot.io' || userInfo?.role === 'SUPER_ADMIN';
+  const isSuperAdmin = userInfo?.userName === "admin@iswot.io" || userInfo?.role === "SUPER_ADMIN";
 
   useEffect(() => {
     const init = async () => {
@@ -44,8 +59,8 @@ export default function PollDayVoters() {
         const payload = dropdownResp?.data?.result || dropdownResp?.result || dropdownResp?.data || [];
         const items = Array.isArray(payload)
           ? payload.map((a: any) => ({
-              label: a?.name || a?.label || a?.assemblyName || `${a?.code || a?.assemblyCode || ''}`,
-              value: String(a?.code || a?.assemblyCode || a?.id || code),
+              label: a?.name || a?.label || a?.assemblyName || `${a?.code || a?.assemblyCode || ""}`,
+              value: a?.code || a?.assemblyCode || String(a?.id || code),
             }))
           : [];
         setAssemblyItems(items.length ? items : [{ label: String(code), value: String(code) }]);
@@ -77,7 +92,7 @@ export default function PollDayVoters() {
       await CRUDAPI.updatePollDayConfig(assemblyCode, null, val);
       setPollDayEnabled(val);
     } catch {
-      setPollError('Failed to update activation.');
+      setPollError("Failed to update activation.");
     }
   };
 
@@ -88,103 +103,189 @@ export default function PollDayVoters() {
       await CRUDAPI.updatePollDayConfig(assemblyCode, null, val);
       setPollDayEnabled(val);
     } catch {
-      setPollError('Failed to update global activation.');
+      setPollError("Failed to update global activation.");
     }
   };
 
   const buildPollDisplay = (item: any) => {
-    const name = [item.firstMiddleNameEn, item.lastNameEn].filter(Boolean).join(' ').trim();
-    const rawStatus = item.votingStatus || item.voteStatus || item.status || item.votedStatus || '';
+    const name = [item.firstMiddleNameEn, item.lastNameEn].filter(Boolean).join(" ").trim();
+    const rawStatus = item.votingStatus || item.voteStatus || item.status || item.votedStatus || "";
     const normalizedStatus = String(rawStatus).toUpperCase();
     return {
       id: item.epicNo || item.voterId || `${name}-${Date.now()}`,
-      name: name || item.name || item.voterName || item.epicNo || 'Unknown',
-      epic: item.epicNo || item.epic || '',
-      phone: item.mobile || item.phone || '',
-      houseNo: item.houseNoEn || item.houseNoLocal || '',
-      natureOfVoter: item.natureOfVoter || item.nature || '',
-      boothNo: item.boothNo || item.boothNumber || item.booth || '',
-      wardCode: item.wardCode || '',
-      votedStatus: normalizedStatus || '',
+      name: name || item.name || item.voterName || item.epicNo || "Unknown",
+      epic: item.epicNo || item.epic || "",
+      phone: item.mobile || item.phone || "",
+      houseNo: item.houseNoEn || item.houseNoLocal || "",
+      natureOfVoter: item.natureOfVoter || item.nature || "",
+      boothNo: item.boothNo || item.boothNumber || item.booth || "",
+      wardCode: item.wardCode || "",
+      votedStatus: normalizedStatus || "",
     };
   };
 
-  const fetchPollVoters = async (queryValue = '') => {
-    setPollLoading(true);
-    setPollError('');
+  const parsePollSearchResponse = (res: any) => {
+    const result = res?.data?.result || res?.result || [];
+    const meta = res?.data?.meta || res?.meta || {};
+    const list = Array.isArray(result) ? result : Array.isArray(res?.data) ? res.data : [];
+    return { list, meta };
+  };
+
+  const runPollVoterFetch = useCallback(
+    async (nextPage = 0, queryValue = pollQuery, append = false) => {
+      if (!assemblyCode) return [];
+      const isFirstPage = nextPage === 0 && !append;
+      if (isFirstPage) setPollLoading(true);
+      else setPollLoadingMore(true);
+      setPollError("");
+      try {
+        const res = await CRUDAPI.searchVoters({
+          assemblyCode,
+          searchQuery: queryValue.trim() || undefined,
+          relationName: pollRelationQuery.trim() || undefined,
+          page: nextPage,
+          size: POLL_PAGE_SIZE,
+        });
+        const { list, meta } = parsePollSearchResponse(res);
+        setPollMeta(meta);
+        setPollHasMore(Boolean(meta?.hasMore));
+        setPollPage(nextPage);
+        const mapped = list.map(buildPollDisplay);
+        setPollVoters((prev) => {
+          if (!append) return mapped;
+          const seen = new Set(prev.map((v) => v.id));
+          return [...prev, ...mapped.filter((v: any) => !seen.has(v.id))];
+        });
+        return list;
+      } catch {
+        if (!append) {
+          setPollError("Unable to load voters.");
+          setPollVoters([]);
+          setPollMeta(null);
+          setPollHasMore(false);
+        }
+        return [];
+      } finally {
+        if (isFirstPage) setPollLoading(false);
+        else setPollLoadingMore(false);
+      }
+    },
+    [assemblyCode, pollQuery, pollRelationQuery]
+  );
+
+  const fetchPollSuggestions = async (queryValue: string) => {
+    if (!assemblyCode || !queryValue.trim()) {
+      setPollSuggestions([]);
+      return;
+    }
     try {
       const res = await CRUDAPI.searchVoters({
         assemblyCode,
-        searchQuery: queryValue.trim() || undefined,
+        searchQuery: queryValue.trim(),
         relationName: pollRelationQuery.trim() || undefined,
-        size: 200,
+        page: 0,
+        size: 20,
       });
-      const payload = res?.data?.result || res?.result || res?.data || [];
-      const list = Array.isArray(payload) ? payload : [];
-      setPollVoters(list.map(buildPollDisplay));
-
-      const suggestions = list.slice(0, 8).map((item: any) => {
-        const suggestionName = [item.firstMiddleNameEn, item.lastNameEn].filter(Boolean).join(' ').trim();
-        return {
-          label: suggestionName || item.name || item.voterName || item.epicNo || 'Unknown',
-          epic: item.epicNo || item.epic || '',
-        };
-      });
-      setPollSuggestions(suggestions);
+      const { list } = parsePollSearchResponse(res);
+      setPollSuggestions(list);
     } catch {
-      setPollError('Unable to load voters.');
-      setPollVoters([]);
       setPollSuggestions([]);
-    } finally {
-      setPollLoading(false);
     }
   };
+
+  const loadMorePollVoters = useCallback(async () => {
+    if (pollLoading || pollLoadingMore || !pollHasMore) return;
+    await runPollVoterFetch(pollPage + 1, pollQuery, true);
+  }, [pollLoading, pollLoadingMore, pollHasMore, pollPage, pollQuery, runPollVoterFetch]);
 
   useEffect(() => {
     if (!assemblyCode) return;
     if (pollSearchTimerRef.current) clearTimeout(pollSearchTimerRef.current);
     pollSearchTimerRef.current = setTimeout(() => {
-      fetchPollVoters(pollQuery);
+      const query = pollQuery.trim();
+      if (query) {
+        setShowPollSuggestions(true);
+        fetchPollSuggestions(query);
+      } else {
+        setPollSuggestions([]);
+        setShowPollSuggestions(false);
+      }
+      runPollVoterFetch(0, pollQuery, false);
     }, 450);
     return () => clearTimeout(pollSearchTimerRef.current);
-  }, [pollQuery, pollRelationQuery, assemblyCode]);
+  }, [pollQuery, pollRelationQuery, assemblyCode, runPollVoterFetch]);
 
   const normalizeNature = (s: string) => {
-    const v = String(s || '').toUpperCase().trim();
-    if (['A', 'FAVOUR', 'FAVOR', 'SUPPORTER'].includes(v)) return 'A';
-    if (['B', 'NEUTRAL'].includes(v)) return 'B';
-    if (['C', 'NON-FAVOUR', 'NON-FAVOR', 'OPPOSITION'].includes(v)) return 'C';
-    if (v === 'NA') return 'NA';
-    return '';
+    const v = String(s || "").toUpperCase().trim();
+    if (["A", "FAVOUR", "FAVOR", "SUPPORTER"].includes(v)) return "A";
+    if (["B", "NEUTRAL"].includes(v)) return "B";
+    if (["C", "NON-FAVOUR", "NON-FAVOR", "OPPOSITION"].includes(v)) return "C";
+    if (v === "NA") return "NA";
+    return "";
   };
+
+  const pollTabCounts = useMemo(() => {
+    const all = Number(pollMeta?.total ?? pollVoters.length) || 0;
+    const voted = pollVoters.filter((v) => isPollVotedStatus(v.votedStatus)).length;
+    const notVoted = pollVoters.filter((v) => isPollNotVotedStatus(v.votedStatus)).length;
+    return { all, voted, notVoted };
+  }, [pollVoters, pollMeta]);
 
   const filteredPollVoters = useMemo(() => {
     let list = [...pollVoters];
     if (natureFilter) list = list.filter((v) => normalizeNature(v.natureOfVoter) === natureFilter);
-    if (tab === 'VOTED') list = list.filter((v) => String(v.votedStatus).toUpperCase().includes('VOTED') && !String(v.votedStatus).toUpperCase().includes('NOT'));
-    if (tab === 'NOT VOTED') list = list.filter((v) => String(v.votedStatus).toUpperCase().includes('NOT'));
+    if (tab === "VOTED") list = list.filter((v) => isPollVotedStatus(v.votedStatus));
+    if (tab === "NOT VOTED") list = list.filter((v) => isPollNotVotedStatus(v.votedStatus));
     return list;
   }, [pollVoters, natureFilter, tab]);
 
   const handleToggleVoted = async (voter: any, newStatus: string) => {
     if (!pollDayEnabled && !globalPollDayEnabled) {
-      setPollError('Poll Day is currently not active. Please enable activation using the checkbox above.');
+      setPollError("Poll Day is currently not active. Please enable activation using the checkbox above.");
       return;
     }
     try {
       await CRUDAPI.updateVoterStatus(voter.epic, newStatus, voter.wardCode, voter.boothNo);
       setPollVoters((prev) => prev.map((v) => (v.id === voter.id ? { ...v, votedStatus: newStatus } : v)));
     } catch {
-      setPollError('Failed to update status.');
+      setPollError("Failed to update status.");
     }
+  };
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const nearBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 120;
+    if (nearBottom) loadMorePollVoters();
+  };
+
+  const tabLabel = (item: string) => {
+    const count =
+      item === "ALL" ? pollTabCounts.all : item === "VOTED" ? pollTabCounts.voted : pollTabCounts.notVoted;
+    return `${item} (${count})`;
   };
 
   return (
     <View className="flex-1 bg-[#EEF3FB]">
-      <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView
+        className="p-4"
+        contentContainerStyle={{ paddingBottom: 120 }}
+        onScroll={handleScroll}
+        scrollEventThrottle={200}
+      >
         <View className="bg-white border border-slate-200 rounded-2xl px-4 py-3 mb-3 z-30">
           <Text className="text-slate-500 text-xs font-bold mb-1">CONTEXT</Text>
-          <DropDownPicker open={openAssembly} value={assemblyCode} items={assemblyItems} setOpen={setOpenAssembly} setValue={setAssemblyCode} setItems={setAssemblyItems} style={{ borderColor: '#CBD5E1', minHeight: 46 }} dropDownContainerStyle={{ borderColor: '#CBD5E1' }} textStyle={{ fontSize: 15, fontWeight: '700', color: '#0f172a' }} />
+          <DropDownPicker
+            open={openAssembly}
+            value={assemblyCode}
+            items={assemblyItems}
+            setOpen={setOpenAssembly}
+            setValue={setAssemblyCode}
+            setItems={setAssemblyItems}
+            style={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12, minHeight: 46 }}
+            dropDownContainerStyle={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12 }}
+            textStyle={{ fontSize: 14, fontWeight: "700", color: "#0f172a" }}
+            placeholderStyle={{ color: "#94A3B8" }}
+          />
         </View>
 
         {isSuperAdmin ? (
@@ -208,34 +309,80 @@ export default function PollDayVoters() {
 
         <View className="bg-white border border-slate-200 rounded-xl px-3 py-2 flex-row items-center">
           <Icon name="search" size={18} color="#94a3b8" />
-          <TextInput className="flex-1 ml-2 text-black text-[13px]" placeholder="Search voter by EPIC or name" value={pollQuery} onChangeText={(v) => { setPollQuery(v); setShowPollSuggestions(true); }} onFocus={() => setShowPollSuggestions(true)} />
+          <TextInput
+            className="flex-1 ml-2 text-black text-[13px]"
+            placeholder="Search voter by EPIC or name"
+            value={pollQuery}
+            onChangeText={(v) => {
+              setPollQuery(v);
+              if (v.trim()) setShowPollSuggestions(true);
+            }}
+            onFocus={() => {
+              if (pollQuery.trim()) setShowPollSuggestions(true);
+            }}
+          />
         </View>
 
-        {showPollSuggestions ? (
+        {showPollSuggestions && pollQuery.trim() ? (
           <View className="mt-2 bg-white border border-slate-200 rounded-xl overflow-hidden">
-            {!pollLoading && pollSuggestions.length === 0 ? <Text className="px-3 py-3 text-slate-400 text-[12px]">No suggestions</Text> : null}
-            {pollSuggestions.map((s: any, idx: number) => (
-              <TouchableOpacity key={`${s.epic || 'suggest'}-${idx}`} className="px-3 py-2 border-t border-slate-100" onPress={() => { setPollQuery(s.label); setShowPollSuggestions(false); }}>
-                <Text className="text-slate-800 text-[13px] font-semibold">{s.label}</Text>
-                <Text className="text-slate-500 text-[11px]">{s.epic || '-'}</Text>
-              </TouchableOpacity>
-            ))}
+            {pollLoading ? <ActivityIndicator className="m-3" color="#2563eb" /> : null}
+            {!pollLoading && pollSuggestions.length === 0 ? (
+              <Text className="px-3 py-3 text-slate-400 text-[12px]">No suggestions</Text>
+            ) : null}
+            {pollSuggestions.map((item: any, idx: number) => {
+              const label = [item.firstMiddleNameEn, item.lastNameEn].filter(Boolean).join(" ").trim() || item.epicNo;
+              return (
+                <TouchableOpacity
+                  key={`${item.epicNo || "suggest"}-${idx}`}
+                  className="px-3 py-2 border-t border-slate-100"
+                  onPress={() => {
+                    setPollQuery(label || item.epicNo || "");
+                    setShowPollSuggestions(false);
+                    setPollSuggestions([]);
+                  }}
+                >
+                  <Text className="text-slate-800 text-[13px] font-semibold">{label}</Text>
+                  <Text className="text-slate-500 text-[11px]">{item.epicNo || "-"}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         ) : null}
 
-        <View className="flex-row mt-3">
-          {['ALL', 'VOTED', 'NOT VOTED'].map((f) => (
-            <TouchableOpacity key={f} onPress={() => setTab(f)} className={`border px-4 py-2 rounded-full mr-2 ${tab === f ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-200'}`}>
-              <Text className={`font-semibold text-[12px] ${tab === f ? 'text-white' : 'text-slate-700'}`}>{f}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3">
+          {["ALL", "VOTED", "NOT VOTED"].map((f) => (
+            <TouchableOpacity
+              key={f}
+              onPress={() => setTab(f)}
+              className={`border px-4 py-2 rounded-full mr-2 ${tab === f ? "bg-blue-600 border-blue-600" : "bg-white border-gray-200"}`}
+            >
+              <Text className={`font-semibold text-[12px] ${tab === f ? "text-white" : "text-slate-700"}`}>{tabLabel(f)}</Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         <View className="mt-3 z-20">
-          <DropDownPicker open={openNature} value={natureFilter} items={natureItems} setOpen={setOpenNature} setValue={setNatureFilter} setItems={setNatureItems} style={{ borderColor: '#CBD5E1', minHeight: 42 }} dropDownContainerStyle={{ borderColor: '#CBD5E1' }} />
+          <DropDownPicker
+            open={openNature}
+            value={natureFilter}
+            items={natureItems}
+            setOpen={setOpenNature}
+            setValue={setNatureFilter}
+            setItems={setNatureItems}
+            style={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12, minHeight: 42 }}
+            dropDownContainerStyle={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12 }}
+            textStyle={{ fontSize: 14, color: "#1E293B", fontWeight: "600" }}
+            placeholderStyle={{ color: "#94A3B8" }}
+          />
         </View>
 
-        {pollLoading ? <ActivityIndicator size="large" color="#2563eb" className="mt-4" /> : null}
+        {pollMeta?.total ? (
+          <Text className="text-slate-500 text-[11px] mt-2">
+            Showing {pollVoters.length} of {pollMeta.total} voters{pollHasMore ? " — scroll for more" : ""}
+          </Text>
+        ) : null}
+
+        {pollLoading && pollVoters.length === 0 ? <ActivityIndicator size="large" color="#2563eb" className="mt-4" /> : null}
         {pollError ? <Text className="text-red-600 mt-3 text-[12px]">{pollError}</Text> : null}
 
         <View className="mt-3">
@@ -243,25 +390,41 @@ export default function PollDayVoters() {
             <View key={`${String(v?.id || v?.epic || v?.name || "poll-voter")}-${idx}`} className="bg-white rounded-xl p-4 mb-3 border border-slate-200">
               <View className="flex-row">
                 <View className="h-10 w-10 bg-blue-600 rounded-full items-center justify-center mr-3">
-                  <Text className="text-white font-bold text-[16px]">{String(v.name || 'U').charAt(0)}</Text>
+                  <Text className="text-white font-bold text-[16px]">{String(v.name || "U").charAt(0)}</Text>
                 </View>
                 <View className="flex-1">
                   <Text className="font-extrabold text-[15px] text-slate-900">{v.name}</Text>
                   <Text className="text-slate-500 text-[12px]">{v.epic}</Text>
-                  <Text className="text-slate-500 text-[12px]">{v.houseNo || '-'}</Text>
+                  <Text className="text-slate-500 text-[12px]">{v.houseNo || "-"}</Text>
                   <View className="flex-row mt-1">
-                    <View className="mr-2 px-2 py-0.5 rounded-full bg-slate-200"><Text className="text-slate-700 text-[10px] font-bold">{normalizeNature(v.natureOfVoter) || 'NA'}</Text></View>
-                    <View className="px-2 py-0.5 rounded-full bg-slate-200"><Text className="text-slate-700 text-[10px] font-bold">{v.boothNo || '-'}</Text></View>
+                    <View className="mr-2 px-2 py-0.5 rounded-full bg-slate-200">
+                      <Text className="text-slate-700 text-[10px] font-bold">{normalizeNature(v.natureOfVoter) || "NA"}</Text>
+                    </View>
+                    <View className="px-2 py-0.5 rounded-full bg-slate-200">
+                      <Text className="text-slate-700 text-[10px] font-bold">{v.boothNo || "-"}</Text>
+                    </View>
                   </View>
                   <View className="flex-row mt-3">
-                    <TouchableOpacity onPress={() => handleToggleVoted(v, 'VOTED')} className="mr-2 border border-slate-300 rounded-full px-4 py-1.5"><Text className="font-bold text-[12px]">VOTED</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleToggleVoted(v, 'NOT VOTED')} className="border border-slate-300 rounded-full px-4 py-1.5"><Text className="font-bold text-[12px]">NOT VOTED</Text></TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleToggleVoted(v, "VOTED")} className="mr-2 border border-slate-300 rounded-full px-4 py-1.5">
+                      <Text className="font-bold text-[12px]">VOTED</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleToggleVoted(v, "NOT VOTED")} className="border border-slate-300 rounded-full px-4 py-1.5">
+                      <Text className="font-bold text-[12px]">NOT VOTED</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               </View>
             </View>
           ))}
-          {!pollLoading && filteredPollVoters.length === 0 ? <Text className="text-slate-400 text-center mt-6 text-[12px]">No voters found.</Text> : null}
+          {!pollLoading && filteredPollVoters.length === 0 ? (
+            <Text className="text-slate-400 text-center mt-6 text-[12px]">No voters found.</Text>
+          ) : null}
+          {pollLoadingMore ? (
+            <View className="py-4 items-center">
+              <ActivityIndicator color="#2563eb" />
+              <Text className="text-slate-500 text-[11px] mt-2">Loading more voters...</Text>
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </View>

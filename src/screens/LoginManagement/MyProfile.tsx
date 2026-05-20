@@ -52,18 +52,55 @@ export default function MyProfile() {
         setForm({ ...form, [key]: value });
     };
 
+    const normalizeProfile = (data: any) => {
+        if (!data) return {};
+        return data?.data?.result ?? data?.data ?? data;
+    };
+
+    const buildProfilePayload = () => ({
+        firstName: (form.firstName || profileInfo.firstName || '').trim(),
+        phone: (form.phone || profileInfo.phone || '').trim(),
+        profilePicUrl: profileInfo.profilePicUrl || undefined,
+        tenantId: profileInfo.tenantId,
+        role: profileInfo.role,
+    });
+
     const getUserProfile = () => {
         setLoading(true);
         CRUDAPI.getUserProfile()
-            .then((data) => { setProfileInfo(data) })
-            .catch((err) => console.log(err))
+            .then((data) => {
+                const profile = normalizeProfile(data);
+                setProfileInfo(profile);
+            })
+            .catch((err) => {
+                console.log(err);
+                Alert.alert('Error', 'Could not load profile');
+            })
             .finally(() => setLoading(false));
-    }
-    const updateUserProfile = () => {
-        CRUDAPI.updateUserProfile(form)
-            .then((response) => console.log(response))
-            .catch((err) => console.log(err));
-    }
+    };
+
+    const updateUserProfile = async () => {
+        const payload = buildProfilePayload();
+        if (!payload.firstName || !payload.phone) {
+            Alert.alert('Validation', 'Name and phone are required');
+            return;
+        }
+        try {
+            const response = await CRUDAPI.updateUserProfile(payload);
+            const updated = normalizeProfile(response);
+            setProfileInfo(updated);
+            setForm({
+                firstName: updated.firstName || payload.firstName,
+                lastName: updated.lastName || '',
+                userName: updated.userName || updated.firstName || payload.firstName,
+                phone: updated.phone || payload.phone,
+            });
+            Alert.alert('Success', 'Profile updated');
+        } catch (err: any) {
+            const msg = err?.response?.data?.detail || err?.message || 'Update failed';
+            Alert.alert('Error', typeof msg === 'string' ? msg : JSON.stringify(msg));
+        }
+    };
 
     const selectProfileImage = () => {
         launchImageLibrary(

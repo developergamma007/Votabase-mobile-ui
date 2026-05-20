@@ -1,5 +1,5 @@
 // SidebarModal.js
-import React, { useRef, useEffect, useContext, useState } from 'react';
+import React, { useRef, useEffect, useContext, useMemo, useState } from 'react';
 import {
     Animated,
     View,
@@ -9,18 +9,50 @@ import {
     Dimensions,
     Modal,
     StyleSheet,
+    ScrollView,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
+import { CRUDAPI } from '../apis/Api';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-export default function SidebarModal({ visible, onClose }) {
-    const { logout, setSidebarVisible, userInfo } = useContext(AuthContext);
+type SidebarProps = { visible: boolean; onClose: () => void };
+
+type RouteMenuItem = { label: string; icon: string; route: string };
+type ExitMenuItem = { label: string; icon: string; action: () => void; isExit: true };
+type MenuItem = RouteMenuItem | ExitMenuItem;
+
+function isExitItem(item: MenuItem): item is ExitMenuItem {
+  return 'isExit' in item && item.isExit === true;
+}
+
+const ALL_MENU_ITEMS: RouteMenuItem[] = [
+    { label: 'Search Voter', icon: 'search-outline', route: 'Search Voter' },
+    { label: 'Search Booth', icon: 'location-outline', route: 'Search Booth' },
+    { label: "Voter's Family", icon: 'people-outline', route: 'boothForFamily' },
+    { label: 'Meetings', icon: 'calendar-outline', route: 'meetings' },
+    { label: 'Poll Day', icon: 'checkbox-outline', route: 'pollDay' },
+    { label: 'Print', icon: 'print-outline', route: 'print' },
+    { label: 'Add Volunteer', icon: 'person-add-outline', route: 'addVolunteer' },
+    { label: 'Manage Volunteers', icon: 'people-outline', route: 'myVolunteers' },
+    { label: 'Volunteer Analysis', icon: 'bar-chart-outline', route: 'volunteerAnalysis' },
+    { label: 'Promotions', icon: 'megaphone-outline', route: 'promotions' },
+    { label: 'Logs', icon: 'document-text-outline', route: 'Logs' },
+    { label: 'Settings', icon: 'settings-outline', route: 'Settings' },
+];
+
+export default function SidebarModal({ visible, onClose }: SidebarProps) {
+    const { logout, userInfo } = useContext(AuthContext);
     const navigation = useNavigation();
     const slideAnim = useRef(new Animated.Value(-width)).current;
+    const [printEnabled, setPrintEnabled] = useState(true);
+
+    const role = String((userInfo as any)?.role || '')
+        .replace(/^ROLE_/, '')
+        .toUpperCase();
 
     useEffect(() => {
         Animated.timing(slideAnim, {
@@ -30,16 +62,45 @@ export default function SidebarModal({ visible, onClose }) {
         }).start();
     }, [visible]);
 
-    const menuItems = [
-        { label: "Home", icon: "home-outline", action: () => { onClose(); navigation.navigate("Home" as any); } },
-        { label: "Add Volunteer", icon: "person-add-outline", action: () => { onClose(); navigation.navigate("addVolunteer" as any); } },
-        { label: "Manage Volunteers", icon: "people-outline", action: () => { onClose(); navigation.navigate("myVolunteers" as any); } },
-        { label: "Volunteer Analysis", icon: "bar-chart-outline", action: () => { onClose(); navigation.navigate("volunteerAnalysis" as any); } },
-        { label: "Voters Family", icon: "people-circle-outline", action: () => { onClose(); navigation.navigate("boothForFamily" as any); } },
-        { label: "Logs", icon: "document-text-outline", action: () => { onClose(); navigation.navigate("Logs" as any); } },
-        { label: "Settings", icon: "settings-outline", action: () => { onClose(); navigation.navigate("Settings" as any); } },
-        { label: "Exit", icon: "exit-outline", action: logout, isExit: true },
-    ];
+    useEffect(() => {
+        if (role && role !== 'BOOTH') {
+            CRUDAPI.fetchMessageTemplate(null, 'PRINT')
+                .then((res) => {
+                    const enabled = res?.data?.result?.enabled;
+                    if (enabled !== undefined) setPrintEnabled(enabled);
+                })
+                .catch(() => setPrintEnabled(true));
+        }
+    }, [role]);
+
+    const menuItems = useMemo(() => {
+        let items = ALL_MENU_ITEMS;
+
+        if (role === 'BOOTH') {
+            items = items.filter((item) =>
+                !['addVolunteer', 'myVolunteers'].includes(item.route)
+            );
+        }
+
+        if (role !== 'SUPER_ADMIN') {
+            items = items.filter((item) => item.route !== 'promotions');
+        }
+
+        if (!['SUPER_ADMIN', 'ADMIN', 'WARD', 'BOOTH', 'USER'].includes(role)) {
+            items = items.filter((item) => !['boothForFamily', 'meetings'].includes(item.route));
+        }
+
+        if (!printEnabled && role !== 'SUPER_ADMIN') {
+            items = items.filter((item) => item.route !== 'print');
+        }
+
+        const withHome: MenuItem[] = [
+            { label: 'Home', icon: 'home-outline', route: 'Home' },
+            ...items,
+            { label: 'Exit', icon: 'exit-outline', action: logout, isExit: true },
+        ];
+        return withHome;
+    }, [role, printEnabled, logout]);
 
     const displayName =
         (userInfo as any)?.name ||
@@ -72,7 +133,6 @@ export default function SidebarModal({ visible, onClose }) {
                         colors={["#0F172A", "#1E293B"]}
                         style={styles.gradient}
                     >
-                        {/* Sidebar Header */}
                         <View style={styles.header}>
                             <View style={styles.profileCircle}>
                                 <Text style={styles.profileInitial}>
@@ -94,30 +154,37 @@ export default function SidebarModal({ visible, onClose }) {
 
                         <View style={styles.divider} />
 
-                        {/* Menu Items */}
-                        <View style={styles.menuContainer}>
-                            {menuItems.map((item, index) => (
+                        <ScrollView style={styles.menuScroll} showsVerticalScrollIndicator={false}>
+                            {menuItems.map((item, index) => {
+                                const exit = isExitItem(item);
+                                return (
                                 <TouchableOpacity 
                                     key={`${item.label}-${index}`} 
-                                    style={[styles.menuItem, item.isExit && styles.exitItem]} 
-                                    onPress={item.action}
+                                    style={[styles.menuItem, exit && styles.exitItem]} 
+                                    onPress={() => {
+                                        onClose();
+                                        if (isExitItem(item)) {
+                                            item.action();
+                                        } else {
+                                            navigation.navigate(item.route as never);
+                                        }
+                                    }}
                                 >
-                                    <View style={[styles.iconBox, { backgroundColor: item.isExit ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255,255,255,0.05)' }]}>
+                                    <View style={[styles.iconBox, { backgroundColor: exit ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255,255,255,0.05)' }]}>
                                         <Ionicons 
                                             name={item.icon} 
                                             size={20} 
-                                            color={item.isExit ? '#EF4444' : '#fff'} 
+                                            color={exit ? '#EF4444' : '#fff'} 
                                         />
                                     </View>
-                                    <Text style={[styles.menuLabel, item.isExit && styles.exitLabel]}>
+                                    <Text style={[styles.menuLabel, exit && styles.exitLabel]}>
                                         {item.label}
                                     </Text>
-                                    {!item.isExit && <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.2)" />}
+                                    {!exit && <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.2)" />}
                                 </TouchableOpacity>
-                            ))}
-                        </View>
+                            );})}
+                        </ScrollView>
 
-                        {/* Footer */}
                         <View style={styles.footer}>
                             <Text style={styles.versionText}>Votabase v2.0.4</Text>
                         </View>
@@ -197,8 +264,10 @@ const styles = StyleSheet.create({
         marginHorizontal: 20,
         marginBottom: 20,
     },
-    menuContainer: {
+    menuScroll: {
+        flex: 1,
         paddingHorizontal: 15,
+        paddingBottom: 80,
     },
     menuItem: {
         flexDirection: 'row',

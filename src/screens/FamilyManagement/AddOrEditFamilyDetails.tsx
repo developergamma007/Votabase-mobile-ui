@@ -340,40 +340,14 @@ export default function AddFamilyDetails() {
                                 setOpenAssociation(false);
                                 setOpenFamilyNature(false);
                             }}
-                            style={{
-                                borderColor: "#cbd5e1",
-                                backgroundColor: "#ffffff",
-                            }}
-                            dropDownContainerStyle={{
-                                borderColor: "#cbd5e1",
-                                backgroundColor: bgColors.blue500_1,
-                            }}
+                            style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
+                            dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
                             listMode="SCROLLVIEW"
                             scrollViewProps={{
                                 nestedScrollEnabled: true,
                             }}
-                            placeholderStyle={{
-                                color: "#94a3b8",
-                                fontSize: 14
-                            }}
-                            textStyle={{
-                                color: "#000000",  // Black color for selected value (OUTSIDE)
-                                fontSize: 14
-                            }}
-                            listItemContainerStyle={{
-                                backgroundColor: bgColors.blue500_1,
-                            }}
-                            listItemLabelStyle={{
-                                color: "#ffffff",  // White color for dropdown items (INSIDE)
-                                fontSize: 14
-                            }}
-                            selectedItemContainerStyle={{
-                                backgroundColor: bgColors.blue600 || "#2563eb",
-                            }}
-                            selectedItemLabelStyle={{
-                                color: "#ffffff",  // White color for selected item in dropdown (INSIDE)
-                                fontWeight: "bold",
-                            }}
+                            placeholderStyle={{ color: '#94A3B8' }}
+                            textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
                         />
                     </View>
 
@@ -391,40 +365,14 @@ export default function AddFamilyDetails() {
                                 setOpenAssociation(false);
                                 setOpenEconomicStatus(false);
                             }}
-                            style={{
-                                borderColor: "#cbd5e1",
-                                backgroundColor: "#ffffff",
-                            }}
-                            dropDownContainerStyle={{
-                                borderColor: "#cbd5e1",
-                                backgroundColor: bgColors.blue500_1,
-                            }}
+                            style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
+                            dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
                             listMode="SCROLLVIEW"
                             scrollViewProps={{
                                 nestedScrollEnabled: true,
                             }}
-                            placeholderStyle={{
-                                color: "#94a3b8",
-                                fontSize: 14
-                            }}
-                            textStyle={{
-                                color: "#000000",  // Black color for selected value (OUTSIDE)
-                                fontSize: 14
-                            }}
-                            listItemContainerStyle={{
-                                backgroundColor: bgColors.blue500_1,
-                            }}
-                            listItemLabelStyle={{
-                                color: "#ffffff",  // White color for dropdown items (INSIDE)
-                                fontSize: 14
-                            }}
-                            selectedItemContainerStyle={{
-                                backgroundColor: bgColors.blue600 || "#2563eb",
-                            }}
-                            selectedItemLabelStyle={{
-                                color: "#ffffff",  // White color for selected item in dropdown (INSIDE)
-                                fontWeight: "bold",
-                            }}
+                            placeholderStyle={{ color: '#94A3B8' }}
+                            textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
                             zIndex={1000}
                         />
                     </View>
@@ -443,36 +391,10 @@ export default function AddFamilyDetails() {
                                 setOpenFamilyNature(false);
                                 setOpenEconomicStatus(false);
                             }}
-                            style={{
-                                borderColor: "#cbd5e1",
-                                backgroundColor: "#ffffff",
-                            }}
-                            dropDownContainerStyle={{
-                                borderColor: "#cbd5e1",
-                                backgroundColor: bgColors.blue500_1,
-                            }}
-                            placeholderStyle={{
-                                color: "#94a3b8",
-                                fontSize: 14
-                            }}
-                            textStyle={{
-                                color: "#000000",  // Black color for selected value (OUTSIDE)
-                                fontSize: 14
-                            }}
-                            listItemContainerStyle={{
-                                backgroundColor: bgColors.blue500_1,
-                            }}
-                            listItemLabelStyle={{
-                                color: "#ffffff",  // White color for dropdown items (INSIDE)
-                                fontSize: 14
-                            }}
-                            selectedItemContainerStyle={{
-                                backgroundColor: bgColors.blue600 || "#2563eb",
-                            }}
-                            selectedItemLabelStyle={{
-                                color: "#ffffff",  // White color for selected item in dropdown (INSIDE)
-                                fontWeight: "bold",
-                            }}
+                            style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
+                            dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+                            placeholderStyle={{ color: '#94A3B8' }}
+                            textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
                             listMode="SCROLLVIEW"
                             scrollViewProps={{
                                 nestedScrollEnabled: true,

@@ -178,7 +178,6 @@ export default function AppStack() {
           headerTitleStyle: {
             fontSize: 18,
             fontWeight: '800',
-            letterSpacing: 0.5,
           },
           headerLeft: () => <HeaderBack />,
           headerRight: () => <HeaderProfile />,
@@ -208,7 +207,7 @@ export default function AppStack() {
         <Stack.Screen name="myVolunteers" component={MyVolunteers} options={{ title: "Manage Volunteers" }} />
         <Stack.Screen name="volunteerAnalysis" component={VolunteerAnalysis} options={{ title: "Analysis" }} />
         <Stack.Screen name="addFamilyDetails" component={AddFamilyDetails} options={{ title: "Family Details" }} />
-        <Stack.Screen name="boothForFamily" component={BoothForFamily} options={{ title: "Select Booth" }} />
+        <Stack.Screen name="boothForFamily" component={BoothForFamily} options={{ title: "Voter's Family " }} />
         <Stack.Screen name="families" component={Families} options={{ title: "Families List" }} />
         <Stack.Screen name="voterFamilyDetails" component={VoterFamilyDetails} options={{ title: "Family Info" }} />
         <Stack.Screen name="meetings" component={Meetings} options={{ title: "Meetings" }} />

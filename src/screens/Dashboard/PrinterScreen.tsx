@@ -9,22 +9,24 @@ import { PrinterHelper } from "../../components/PrinterHelper";
 import DropDownPicker from "react-native-dropdown-picker";
 
 export default function PrinterScreen() {
-    const { userInfo } = useContext(AuthContext);
+    const { userInfo } = useContext(AuthContext) as any;
     const [printers, setPrinters] = useState([]);
-    const [connectedPrinter, setConnectedPrinter] = useState(null);
+    const [connectedPrinter, setConnectedPrinter] = useState<any>(null);
     const [scanStatus, setScanStatus] = useState('');
     const [scanError, setScanError] = useState('');
 
     // Ward / Booth / Voter state
-    const [wards, setWards] = useState([]);
-    const [selectedWard, setSelectedWard] = useState('');
-    const [booths, setBooths] = useState([]);
+    const [wards, setWards] = useState<any[]>([]);
+    const [selectedWard, setSelectedWard] = useState(null);
+    const [openWard, setOpenWard] = useState(false); // for dropdown
+    const [booths, setBooths] = useState<any[]>([]);
     const [selectedBooth, setSelectedBooth] = useState('');
-    const [voters, setVoters] = useState([]);
+    const [voters, setVoters] = useState<any[]>([]);
     const [loadingVoters, setLoadingVoters] = useState(false);
-    const [printingIdx, setPrintingIdx] = useState(-1);
-    const [printTemplate, setPrintTemplate] = useState(null);
+    const [printTemplate, setPrintTemplate] = useState<any>(null);
     const [templateLoading, setTemplateLoading] = useState(false);
+    
+    // Context
     const [assemblyCode, setAssemblyCode] = useState('');
     const [openAssembly, setOpenAssembly] = useState(false);
     const [assemblyItems, setAssemblyItems] = useState<any[]>([]);
@@ -34,12 +36,12 @@ export default function PrinterScreen() {
             const code = await getAssemblyCode();
             setAssemblyCode(code);
             try {
-                const dropdownResp = await CRUDAPI.getAssemblyDropdown();
+                const dropdownResp = await (CRUDAPI as any).getAssemblyDropdown();
                 const payload = dropdownResp?.data?.result || dropdownResp?.result || dropdownResp?.data || [];
                 const items = Array.isArray(payload)
                     ? payload.map((a: any) => ({
                         label: a?.name || a?.label || a?.assemblyName || `${a?.code || a?.assemblyCode || ''}`,
-                        value: String(a?.code || a?.assemblyCode || a?.id || code),
+                        value: a?.code || a?.assemblyCode || String(a?.id || code),
                     }))
                     : [];
                 setAssemblyItems(items.length ? items : [{ label: String(code), value: String(code) }]);
@@ -54,13 +56,13 @@ export default function PrinterScreen() {
         init();
     }, []);
 
-    const loadWards = async (code) => {
+    const loadWards = async (code: string) => {
         try {
-            const res = await CRUDAPI.fetchWards(code);
-            const list = (res?.data?.result || res?.result || res || []).map(w => ({
+            const res = await (CRUDAPI as any).fetchWards(code);
+            const list = (res?.data?.result || res?.result || res || []).map((w: any) => ({
                 label: w.wardNameEn || `Ward ${w.wardId}`,
                 value: String(w.wardId),
-            })).sort((a, b) => a.label.localeCompare(b.label));
+            })).sort((a: any, b: any) => a.label.localeCompare(b.label));
             setWards(list);
         } catch (err) {
             console.error('Failed to load wards:', err);
@@ -76,12 +78,12 @@ export default function PrinterScreen() {
         }
 
         setTemplateLoading(true);
-        CRUDAPI.fetchMessageTemplate(selectedWard, 'PRINT').then((res) => {
+        (CRUDAPI as any).fetchMessageTemplate(selectedWard, 'PRINT').then((res: any) => {
             setPrintTemplate(res?.data?.result || res?.result || res || {});
         }).catch(() => setPrintTemplate(null)).finally(() => setTemplateLoading(false));
 
-        CRUDAPI.fetchBooths(assemblyCode, selectedWard).then((res) => {
-            const list = (res?.data?.result || res?.result || res || []).map(b => ({
+        (CRUDAPI as any).fetchBooths(assemblyCode, selectedWard).then((res: any) => {
+            const list = (res?.data?.result || res?.result || res || []).map((b: any) => ({
                 label: `#${b.boothNo} - ${b.boothNameEn || b.nameEn || 'Booth'}`,
                 value: String(b.boothId || b.id),
                 ...b
@@ -100,49 +102,55 @@ export default function PrinterScreen() {
             return;
         }
         setLoadingVoters(true);
-        CRUDAPI.fetchBoothVoters(selectedBooth).then((res) => {
-            setVoters(res?.data?.result?.voters || res?.result?.voters || res?.voters || []);
+        (CRUDAPI as any).fetchBoothVoters(selectedBooth).then((res: any) => {
+            setVoters(res?.data?.result || res?.result || []);
         }).catch(() => setVoters([])).finally(() => setLoadingVoters(false));
     }, [selectedBooth]);
 
-    const handleScanPrinters = () => {
+    const handleScanPrinters = async () => {
+        setScanStatus('Scanning for BLE devices...');
         setScanError('');
-        setScanStatus('Searching for Bluetooth printers...');
-        // Mocking scan for now as native BLE library is required
-        setScanStatus('Mock: Scanning for printers...');
-        setTimeout(() => {
-            setPrinters([
-                { id: '00:11:22:33:44:55', name: 'Thermal Printer A' },
-                { id: '66:77:88:99:AA:BB', name: 'Z-Printer' }
-            ]);
-            setScanStatus('Found 2 devices.');
-        }, 1500);
+        try {
+            const devices = await PrinterHelper.scanForPrinters();
+            setPrinters(devices as any);
+            setScanStatus(devices.length ? `Found ${devices.length} devices.` : 'No devices found.');
+        } catch (e: any) {
+            setScanError(e.message || 'Bluetooth scan failed.');
+            setScanStatus('');
+        }
     };
 
-    const handleConnect = async (printer) => {
-        if (connectedPrinter?.id === printer.id) {
-            setConnectedPrinter(null);
-            await AsyncStorage.removeItem('connectedPrinter');
-            setScanStatus('Disconnected.');
+    const handleConnect = async (printer: any) => {
+        setScanStatus(`Connecting to ${printer.name}...`);
+        try {
+            await PrinterHelper.connectPrinter(printer);
+            setConnectedPrinter(printer);
+            await AsyncStorage.setItem('connectedPrinter', JSON.stringify(printer));
+            setScanStatus('Connected successfully.');
+        } catch (e: any) {
+            Alert.alert("Connection Failed", e.message);
+            setScanStatus('');
+        }
+    };
+
+    const performPrint = async (content: string) => {
+        if (!connectedPrinter) {
+            Alert.alert("Not Connected", "Please connect a thermal printer first.");
             return;
         }
-        setConnectedPrinter(printer);
-        await AsyncStorage.setItem('connectedPrinter', JSON.stringify(printer));
-        setScanStatus(`Connected to ${printer.name}`);
-    };
-
-    const performPrint = async (text) => {
-        const success = await PrinterHelper.performPrint(connectedPrinter, text);
-        if (success) {
-            // Alert already handled in helper or here
+        try {
+            await PrinterHelper.printText(content);
+        } catch (e: any) {
+            Alert.alert("Print Error", e.message || "Failed to communicate with printer.");
         }
     };
 
     return (
-        <View className="flex-1 bg-[#F4F3FF]">
-            <ScrollView className="px-4 pt-6">
-                <View className="bg-white border border-slate-200 rounded-2xl px-4 py-3 mb-3 z-40">
-                    <Text className="text-slate-500 text-xs font-bold mb-1">CONTEXT</Text>
+        <View className="flex-1 bg-slate-50">
+            <ScrollView className="flex-1 p-4" showsVerticalScrollIndicator={false}>
+                
+                {/* Context Assembly Dropdown */}
+                <View className="z-50 mb-3" style={{ paddingHorizontal: 2 }}>
                     <DropDownPicker
                         open={openAssembly}
                         value={assemblyCode}
@@ -150,140 +158,183 @@ export default function PrinterScreen() {
                         setOpen={setOpenAssembly}
                         setValue={setAssemblyCode}
                         setItems={setAssemblyItems}
-                        style={{ borderColor: '#CBD5E1', minHeight: 46 }}
-                        dropDownContainerStyle={{ borderColor: '#CBD5E1' }}
-                        textStyle={{ fontSize: 15, fontWeight: '700', color: '#0f172a' }}
+                        onOpen={() => setOpenWard(false)}
+                        placeholder="Select Context..."
+                        style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
+                        dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+                        textStyle={{ fontSize: 14, fontWeight: '700', color: '#0f172a' }}
+                        placeholderStyle={{ color: '#94A3B8' }}
+                        zIndex={2000}
+                        zIndexInverse={1000}
                     />
                 </View>
-                <LinearGradient colors={["#0C7BB3", "#0796A1"]} className="rounded-2xl p-4 mb-5">
-                    <View className="flex-row items-center justify-between">
-                        <View>
-                            <View className="flex-row items-center mb-1">
-                                <View className={`h-3 w-3 ${connectedPrinter ? 'bg-green-500' : 'bg-gray-400'} rounded-full mr-2`} />
-                                <Text className="font-semibold text-white">
-                                    {connectedPrinter ? 'Ready to Print' : 'Not Connected'}
+
+                {/* Main Unified Web-Like Card */}
+                <View style={{ backgroundColor: '#ffffff', borderRadius: 16, borderColor: '#e2e8f0', borderWidth: 1, overflow: 'hidden', marginBottom: 24, elevation: 1, shadowColor: '#94a3b8', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 }}>
+                    
+                    {/* Header Banner */}
+                    <View style={{ padding: 16, paddingBottom: 0 }}>
+                        <LinearGradient 
+                            colors={["#EEF2FF", "#E0E7FF"]} 
+                            start={{x: 0, y: 0}} end={{x: 1, y: 1}}
+                            style={{ paddingHorizontal: 16, paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                        >
+                            <View style={{ flex: 1, paddingRight: 12 }}>
+                                <Text style={{ fontWeight: 'bold', fontSize: 16, color: connectedPrinter ? '#15803d' : '#1e3a8a', marginBottom: 2 }}>
+                                    {connectedPrinter ? 'Connected' : 'Not Connected'}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: '#64748b', fontWeight: '500' }}>
+                                    {connectedPrinter ? connectedPrinter.name : 'Search for nearby printers'}
                                 </Text>
                             </View>
-                            <Text className="text-white text-xs">
-                                {connectedPrinter ? connectedPrinter.name : 'Scan for printers'}
-                            </Text>
-                        </View>
-                        <TouchableOpacity
-                            onPress={handleScanPrinters}
-                            className="bg-white px-4 py-2 rounded-full shadow-sm"
-                        >
-                            <Text className="text-blue-600 font-semibold text-xs">Scan Printers</Text>
-                        </TouchableOpacity>
-                    </View>
-                </LinearGradient>
-
-                {scanStatus ? <Text className="text-blue-600 text-xs mb-3 text-center italic">{scanStatus}</Text> : null}
-
-                {/* Printer List */}
-                {printers.length > 0 && !connectedPrinter && (
-                    <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm">
-                        <Text className="text-gray-800 font-bold mb-3">Available Printers</Text>
-                        {printers.map((p, printerIndex) => (
                             <TouchableOpacity
-                                key={`${String(p?.id || p?.name || "printer")}-${printerIndex}`}
-                                onPress={() => handleConnect(p)}
-                                className="flex-row justify-between items-center py-3 border-b border-gray-100"
+                                onPress={() => connectedPrinter ? setConnectedPrinter(null) : handleScanPrinters()}
+                                style={{ backgroundColor: connectedPrinter ? '#ef4444' : '#3b82f6', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 9999, elevation: 2, shadowColor: connectedPrinter ? '#ef4444' : '#3b82f6', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3 }}
                             >
-                                <View>
-                                    <Text className="text-gray-700 font-medium">{p.name}</Text>
-                                    <Text className="text-gray-400 text-[10px]">{p.id}</Text>
-                                </View>
-                                <Icon name="bluetooth" size={18} color="#0C7BB3" />
+                                <Text style={{ color: '#ffffff', fontWeight: 'bold', fontSize: 12 }}>
+                                    {connectedPrinter ? 'Disconnect' : 'Scan'}
+                                </Text>
                             </TouchableOpacity>
-                        ))}
+                        </LinearGradient>
                     </View>
-                )}
 
-                {/* Selection Logic */}
-                <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm">
-                    <Text className="text-gray-800 font-bold mb-3">Election Context</Text>
+                    {/* Printer List Section */}
+                    <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <Text style={{ fontSize: 14, color: '#334155', fontWeight: '600' }}>Available Thermal Printers</Text>
+                            <TouchableOpacity onPress={handleScanPrinters} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Icon name="refresh" size={14} color="#3b82f6" style={{ marginRight: 4 }} />
+                                <Text style={{ fontSize: 12, color: '#3b82f6', fontWeight: '600' }}>Refresh List</Text>
+                            </TouchableOpacity>
+                        </View>
+                        
+                        {scanStatus ? <Text style={{ color: '#2563eb', fontSize: 12, marginBottom: 12, textAlign: 'center', fontStyle: 'italic' }}>{scanStatus}</Text> : null}
 
-                    <View className="mb-3">
-                        <Text className="text-gray-500 text-xs mb-1">Select Ward</Text>
-                        <View className="border border-gray-200 rounded-lg overflow-hidden">
-                            {/* Fallback to simple select logic if Picker is not available */}
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="p-2">
-                                {wards.map((w, wardIndex) => (
+                        {printers.length === 0 && !connectedPrinter ? (
+                            <View style={{ paddingVertical: 24, alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', marginBottom: 4, fontWeight: '500' }}>No paired printers found.</Text>
+                                <Text style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', fontWeight: '500' }}>
+                                    Click <Text style={{ color: '#334155', fontWeight: 'bold' }}>Scan</Text> to pair a new one.
+                                </Text>
+                            </View>
+                        ) : (
+                            <View style={{ gap: 8 }}>
+                                {printers.map((p: any, printerIndex) => (
                                     <TouchableOpacity
-                                        key={`${String(w?.value || w?.label || "ward")}-${wardIndex}`}
-                                        onPress={() => setSelectedWard(w.value)}
-                                        className={`px-3 py-1.5 rounded-full mr-2 ${selectedWard === w.value ? 'bg-blue-600' : 'bg-gray-100'}`}
+                                        key={`${String(p?.id || p?.name || "printer")}-${printerIndex}`}
+                                        onPress={() => handleConnect(p)}
+                                        style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}
                                     >
-                                        <Text className={`text-xs ${selectedWard === w.value ? 'text-white' : 'text-gray-600'}`}>{w.label}</Text>
+                                        <View>
+                                            <Text style={{ color: '#334155', fontWeight: 'bold', fontSize: 14 }}>{p.name}</Text>
+                                            <Text style={{ color: '#94a3b8', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginTop: 4 }}>{p.id}</Text>
+                                        </View>
+                                        <Icon name="bluetooth" size={20} color="#3b82f6" />
                                     </TouchableOpacity>
                                 ))}
-                            </ScrollView>
-                        </View>
+                            </View>
+                        )}
                     </View>
 
-                    {selectedWard ? (
-                        <View className="mb-3">
-                            <Text className="text-gray-500 text-xs mb-1">Select Booth</Text>
-                            <View className="border border-gray-200 rounded-lg overflow-hidden">
-                                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="p-2">
-                                    {booths.map((b, boothIndex) => (
+                    {/* Ward / Election Template Section */}
+                    <View style={{ padding: 16 }}>
+                        <Text style={{ fontSize: 14, color: '#334155', fontWeight: '600', marginBottom: 12 }}>Ward / Election Template</Text>
+                        
+                        <DropDownPicker
+                            open={openWard}
+                            value={selectedWard}
+                            items={wards}
+                            setOpen={setOpenWard}
+                            setValue={setSelectedWard}
+                            onOpen={() => setOpenAssembly(false)}
+                            placeholder="Select Ward..."
+                            style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 8, minHeight: 44 }}
+                            dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 8 }}
+                            textStyle={{ fontSize: 14, color: '#334155' }}
+                            placeholderStyle={{ color: '#94A3B8' }}
+                            listMode="SCROLLVIEW"
+                            scrollViewProps={{ nestedScrollEnabled: true }}
+                            zIndex={1000}
+                            zIndexInverse={2000}
+                        />
+
+                        {printTemplate && (
+                            <Text style={{ color: '#16a34a', fontSize: 11, fontWeight: 'bold', marginTop: 8 }}>
+                                ✓ Template loaded successfully.
+                            </Text>
+                        )}
+
+                        <Text style={{ color: '#94a3b8', fontSize: 11, fontStyle: 'italic', marginTop: 16, marginBottom: 16, lineHeight: 16 }}>
+                            Note: BLE Print is experimental. If your printer reboots, use <Text style={{ fontWeight: 'bold' }}>System Print</Text> instead (requires pairing printer in OS settings).
+                        </Text>
+
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <TouchableOpacity
+                                onPress={() => performPrint("BLE PRINT TEST\n")}
+                                style={{ flex: 1, backgroundColor: '#8fa4f6', paddingVertical: 12, borderRadius: 8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginRight: 6 }}
+                            >
+                                <Icon name="print" size={16} color="white" style={{ marginRight: 6 }} />
+                                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>BLE Print</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => performPrint("TEST 1 LINE\n")}
+                                style={{ flex: 1, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e2e8f0', paddingVertical: 12, borderRadius: 8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginLeft: 6 }}
+                            >
+                                <Icon name="pencil" size={16} color="#10b981" style={{ marginRight: 6 }} />
+                                <Text style={{ color: '#334155', fontWeight: 'bold', fontSize: 13 }}>Test 1 Line</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+
+                {/* Booth and Voter Selection */}
+                {selectedWard ? (
+                    <View style={{ zIndex: 10, marginBottom: 32 }}>
+                        <View style={{ marginBottom: 16 }}>
+                            <Text style={{ color: '#64748b', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, marginLeft: 4 }}>Select Booth</Text>
+                            <View style={{ borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#ffffff', borderRadius: 12, overflow: 'hidden', elevation: 1, shadowColor: '#94a3b8', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 4 }}>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ padding: 12 }}>
+                                    {booths.map((b: any, boothIndex) => (
                                         <TouchableOpacity
                                             key={`${String(b?.value || b?.label || "booth")}-${boothIndex}`}
                                             onPress={() => setSelectedBooth(b.value)}
-                                            className={`px-3 py-1.5 rounded-full mr-2 ${selectedBooth === b.value ? 'bg-blue-600' : 'bg-gray-100'}`}
+                                            style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 9999, marginRight: 8, borderWidth: 1, borderColor: selectedBooth === b.value ? '#4f46e5' : '#e2e8f0', backgroundColor: selectedBooth === b.value ? '#4f46e5' : '#f8fafc' }}
                                         >
-                                            <Text className={`text-xs ${selectedBooth === b.value ? 'text-white' : 'text-gray-600'}`}>{b.label}</Text>
+                                            <Text style={{ fontSize: 13, fontWeight: '500', color: selectedBooth === b.value ? '#ffffff' : '#475569' }}>{b.label}</Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
                             </View>
                         </View>
-                    ) : null}
 
-                    {printTemplate && (
-                        <View className="bg-green-50 p-2 rounded-lg mt-2">
-                            <Text className="text-green-700 text-[10px] font-bold">✓ Template: {printTemplate.electionName || 'Loaded'}</Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* Search Voter */}
-                {loadingVoters ? <ActivityIndicator className="mt-4" /> : (
-                    voters.map((v, i) => (
-                        <View key={`${String(v?.epicNo || v?.voterId || v?.serialNo || "voter")}-${i}`} className="bg-white rounded-xl p-4 mb-3 border border-gray-100 flex-row justify-between items-center">
-                            <View className="flex-1">
-                                <Text className="font-bold text-gray-800">{v.firstMiddleNameEn || v.name}</Text>
-                                <Text className="text-gray-500 text-xs">Sl: {v.serialNo} · {v.epicNo}</Text>
+                        {selectedBooth && (
+                            <View>
+                                <Text style={{ color: '#64748b', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, marginLeft: 4 }}>Voters in Booth</Text>
+                                {loadingVoters ? <ActivityIndicator style={{ marginTop: 16 }} color="#4f46e5" /> : (
+                                    voters.length === 0 ? (
+                                        <Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 16 }}>No voters found.</Text>
+                                    ) : voters.map((v: any, i) => (
+                                        <View key={`${String(v?.epicNo || v?.voterId || v?.serialNo || "voter")}-${i}`} style={{ backgroundColor: '#ffffff', borderRadius: 12, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e2e8f0', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 1, shadowColor: '#94a3b8', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 4 }}>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={{ fontWeight: 'bold', color: '#1e293b', fontSize: 15 }}>{v.firstMiddleNameEn || v.name}</Text>
+                                                <Text style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>Sl: {v.serialNo}  •  EPIC: {v.epicNo}</Text>
+                                            </View>
+                                            <TouchableOpacity
+                                                onPress={() => performPrint(PrinterHelper.formatVoterSlip(v, booths.find((b: any) => b.value === selectedBooth), printTemplate))}
+                                                style={{ backgroundColor: '#e0e7ff', borderWidth: 1, borderColor: '#c7d2fe', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 }}
+                                            >
+                                                <Text style={{ color: '#4f46e5', fontSize: 12, fontWeight: 'bold' }}>Print Slip</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    ))
+                                )}
                             </View>
-                            <TouchableOpacity
-                                onPress={() => performPrint(PrinterHelper.formatVoterSlip(v, booths.find(b => b.value === selectedBooth), printTemplate))}
-                                className="bg-blue-600 px-4 py-2 rounded-lg"
-                            >
-                                <Text className="text-white text-xs font-bold">Print</Text>
-                            </TouchableOpacity>
-                        </View>
-                    ))
-                )}
+                        )}
+                    </View>
+                ) : null}
 
-                <View className="h-20" />
+                <View style={{ height: 40 }} />
             </ScrollView>
-
-            <View className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100">
-                <TouchableOpacity
-                    onPress={() => performPrint("TEST PRINT SUCCESSFUL\n")}
-                    className="bg-gray-100 py-4 rounded-xl mb-2"
-                >
-                    <Text className="text-center text-gray-700 font-bold">Test 1 Line</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    onPress={() => connectedPrinter ? setConnectedPrinter(null) : handleScanPrinters()}
-                    className={`${connectedPrinter ? 'bg-red-500' : 'bg-blue-600'} py-4 rounded-xl`}
-                >
-                    <Text className="text-center text-white font-bold">
-                        {connectedPrinter ? 'Disconnect Printer' : 'Search Printers'}
-                    </Text>
-                </TouchableOpacity>
-            </View>
         </View>
     );
 }

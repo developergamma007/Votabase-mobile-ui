@@ -1,16 +1,17 @@
-// src/context/useAuthState.js
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { AuthContextValue, BannerState } from './authTypes';
 
-export default function useAuthState() {
-  const [userToken, setUserToken] = useState('');
+export default function useAuthState(): AuthContextValue {
+  const [userToken, setUserTokenState] = useState('');
+  const setUserToken = (token: string | null) => setUserTokenState(token || '');
   const [loading, setLoading] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(false);
-  const [banner, setBanner] = useState({
-    type: null,   // "success" | "error"
-    message: "",
+  const [banner, setBanner] = useState<BannerState>({
+    type: null,
+    message: '',
   });
-  const [userInfo, setUserInfo] = useState(false);
+  const [userInfo, setUserInfo] = useState<Record<string, unknown> | false>(false);
 
   useEffect(() => {
     if (banner.type) {
@@ -23,7 +24,7 @@ export default function useAuthState() {
     }
   }, [banner.type, banner.message]);
 
-  const updateToken = async (token) => {
+  const updateToken = async (token: string) => {
     setUserToken(token);
     await AsyncStorage.setItem('X_INIT_TOKEN', token);
   };

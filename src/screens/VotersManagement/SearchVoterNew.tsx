@@ -13,10 +13,9 @@ import {
     Platform,
 } from "react-native";
 import DropDownPicker from "react-native-dropdown-picker";
-import { bgColors } from "../../constants/colors";
-import LinearGradient from "react-native-linear-gradient";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
+import { premium } from "../../constants/premiumTheme";
 import { PrinterHelper } from "../../components/PrinterHelper";
 
 const PAGE_SIZE = 50;
@@ -75,7 +74,7 @@ export default function SearchVoter() {
                 if (res?.data?.result) {
                     setAssemblyItems(res.data.result.map((a: any) => ({
                         label: `${a.name} (${a.id})`,
-                        value: a.code?.length || String(a.id)
+                        value: a.code || String(a.id)
                     })));
                 }
             } catch (err) {
@@ -303,7 +302,7 @@ export default function SearchVoter() {
     return (
         <View style={styles.container}>
             {/* Context Section - Always Visible */}
-            <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, zIndex: 2000, backgroundColor: '#f8fafc' }}>
+            <View style={styles.contextWrap}>
                 <View style={styles.contextRow}>
                     <Text style={styles.contextLabel}>CONTEXT</Text>
                     <View style={styles.dropdownContainer}>
@@ -314,8 +313,10 @@ export default function SearchVoter() {
                             setOpen={setOpenAssembly}
                             setValue={(val) => handleChange("assemblyCode", val(form.assemblyCode))}
                             placeholder="Select Assembly"
-                            style={styles.dropdown}
-                            dropDownContainerStyle={styles.dropdownPanel}
+                            style={styles.contextDropdown}
+                            dropDownContainerStyle={styles.contextDropdownPanel}
+                            textStyle={styles.dropdownText}
+                            placeholderStyle={styles.dropdownPlaceholder}
                         />
                     </View>
                 </View>
@@ -345,8 +346,10 @@ export default function SearchVoter() {
                                         setOpen={setOpenWard}
                                         setValue={(val) => handleChange("wards", val(form.wards))}
                                         placeholder="Select Ward"
-                                        style={styles.dropdown}
-                                        dropDownContainerStyle={styles.dropdownPanel}
+                                        style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
+                                        dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+                                        textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
+                                        placeholderStyle={{ color: '#94A3B8' }}
                                         listMode="SCROLLVIEW"
                                     />
                                 </View>
@@ -391,7 +394,7 @@ export default function SearchVoter() {
 
                         <View style={styles.actionButtons}>
                             <TouchableOpacity style={styles.secondaryBtn} onPress={() => setShowMoreFilters(!showMoreFilters)}>
-                                <Text style={styles.secondaryBtnText}>{showMoreFilters ? "Hide Filters" : "More Filters"}</Text>
+                                <Text style={styles.secondaryBtnText}>{showMoreFilters ? "Hide" : "More"}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.secondaryBtn} onPress={handleReset}>
                                 <Text style={styles.secondaryBtnText}>Reset</Text>
@@ -467,67 +470,85 @@ export default function SearchVoter() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#F8FAFC",
+        backgroundColor: premium.bg,
     },
     scrollContent: {
         padding: 16,
+        paddingBottom: 32,
+    },
+    contextWrap: {
+        paddingHorizontal: 16,
+        paddingTop: 10,
+        paddingBottom: 10,
+        zIndex: 2000,
+        backgroundColor: premium.bg,
     },
     contextRow: {
         flexDirection: "row",
         alignItems: "center",
-        marginBottom: 20,
-        backgroundColor: "#fff",
-        padding: 12,
-        borderRadius: 12,
+        backgroundColor: premium.bgCard,
+        padding: 14,
+        borderRadius: premium.radius.lg,
         borderWidth: 1,
-        borderColor: "#E2E8F0",
+        borderColor: premium.border,
+        ...premium.shadow.soft,
     },
     contextLabel: {
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: "800",
-        color: "#64748B",
+        color: premium.textMuted,
         marginRight: 12,
+        letterSpacing: 0.8,
     },
+    contextDropdown: {
+        backgroundColor: premium.bgCard,
+        borderColor: premium.border,
+        borderRadius: premium.radius.md,
+        minHeight: 46,
+    },
+    contextDropdownPanel: {
+        backgroundColor: premium.bgCard,
+        borderColor: premium.border,
+        borderRadius: premium.radius.md,
+    },
+    dropdownText: { fontSize: 14, color: premium.text, fontWeight: "600" },
+    dropdownPlaceholder: { color: premium.textLight },
     dropdownContainer: {
         flex: 1,
     },
     dropdown: {
-        borderColor: "#E2E8F0",
-        borderRadius: 8,
-        minHeight: 40,
+        borderColor: premium.border,
+        borderRadius: premium.radius.md,
+        minHeight: 46,
     },
     dropdownPanel: {
-        borderColor: "#E2E8F0",
+        borderColor: premium.border,
     },
     searchCard: {
-        backgroundColor: "#fff",
-        borderRadius: 24,
-        padding: 20,
+        backgroundColor: premium.bgCard,
+        borderRadius: premium.radius.xl,
+        padding: 22,
         borderWidth: 1,
-        borderColor: "#F1F5F9",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 15 },
-        shadowOpacity: 0.1,
-        shadowRadius: 30,
-        elevation: 8,
+        borderColor: premium.border,
+        ...premium.shadow.card,
     },
     searchInputWrap: {
         flexDirection: "row",
         alignItems: "center",
         backgroundColor: "#F8FAFC",
-        borderRadius: 16,
+        borderRadius: premium.radius.lg,
         paddingHorizontal: 16,
-        height: 54,
+        height: 56,
         marginBottom: 16,
         borderWidth: 1,
-        borderColor: "#E2E8F0",
+        borderColor: premium.border,
     },
     searchInput: {
         flex: 1,
         marginLeft: 12,
         fontSize: 16,
         fontWeight: "600",
-        color: "#1E293B",
+        color: premium.text,
     },
     moreFilters: {
         marginTop: 4,
@@ -535,34 +556,34 @@ const styles = StyleSheet.create({
     input: {
         backgroundColor: "#F8FAFC",
         borderWidth: 1,
-        borderColor: "#E2E8F0",
-        borderRadius: 16,
+        borderColor: premium.border,
+        borderRadius: premium.radius.md,
         paddingHorizontal: 16,
         height: 50,
         marginBottom: 12,
         fontSize: 14,
         fontWeight: "600",
-        color: "#1E293B",
+        color: premium.text,
     },
     actionButtons: {
         flexDirection: "row",
         justifyContent: "space-between",
-        marginTop: 12,
-        gap: 8,
+        marginTop: 14,
+        gap: 10,
     },
     primaryBtn: {
-        backgroundColor: "#2563EB",
-        borderRadius: 14,
+        backgroundColor: premium.primary,
+        borderRadius: premium.radius.md,
         paddingHorizontal: 24,
         justifyContent: "center",
         alignItems: "center",
-        height: 50,
+        height: 52,
         flex: 2,
-        shadowColor: "#2563EB",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
+        shadowColor: premium.primary,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.35,
+        shadowRadius: 10,
+        elevation: 5,
     },
     primaryBtnText: {
         color: "#fff",
@@ -570,16 +591,18 @@ const styles = StyleSheet.create({
         fontSize: 15,
     },
     secondaryBtn: {
-        backgroundColor: "#F1F5F9",
-        borderRadius: 14,
-        paddingHorizontal: 16,
+        backgroundColor: premium.bgCard,
+        borderRadius: premium.radius.md,
+        paddingHorizontal: 14,
         justifyContent: "center",
         alignItems: "center",
-        height: 50,
+        height: 52,
         flex: 1,
+        borderWidth: 1,
+        borderColor: premium.border,
     },
     secondaryBtnText: {
-        color: "#475569",
+        color: premium.textMuted,
         fontWeight: "700",
         fontSize: 13,
     },

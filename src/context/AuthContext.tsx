@@ -1,21 +1,23 @@
 import React, { createContext, useEffect } from 'react';
 import useAuthState from './useAuthState';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AuthContextValue, defaultAuthContext } from './authTypes';
 
-export const AuthContext = createContext();
+export const AuthContext = createContext<AuthContextValue>(defaultAuthContext);
 
-export const AuthProvider = ({ children }) => {
-  const auth = useAuthState(); // gets: userToken, loading, updateToken, logout
+type AuthProviderProps = { children: React.ReactNode };
 
+export const AuthProvider = ({ children }: AuthProviderProps) => {
+  const auth = useAuthState();
 
   useEffect(() => {
     const loadToken = async () => {
-      const savedToken = await AsyncStorage.getItem("X_INIT_TOKEN");
-      auth.setUserToken(savedToken);
+      const savedToken = await AsyncStorage.getItem('X_INIT_TOKEN');
+      auth.setUserToken(savedToken || '');
       auth.setLoading(false);
     };
     const getUserInfo = async () => {
-      const data = await AsyncStorage.getItem("userInfo");
+      const data = await AsyncStorage.getItem('userInfo');
       if (data) auth.setUserInfo(JSON.parse(data));
     };
     getUserInfo();

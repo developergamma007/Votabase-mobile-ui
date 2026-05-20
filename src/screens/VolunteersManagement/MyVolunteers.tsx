@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,87 +7,102 @@ import {
   ScrollView,
   RefreshControl,
   ActivityIndicator,
-} from "react-native";
-import { useNavigation } from "@react-navigation/native";
-import DropDownPicker from "react-native-dropdown-picker";
-import { CRUDAPI } from "../../apis/Api";
-import { bgColors } from "../../constants/colors";
+  StyleSheet,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import DropDownPicker from 'react-native-dropdown-picker';
+import { CRUDAPI, getAssemblyCode } from '../../apis/Api';
+import { AuthContext } from '../../context/AuthContext';
+import { premium } from '../../constants/premiumTheme';
+import ListPreview from '../../components/ListPreview';
 
 export default function MyVolunteers() {
   const navigation = useNavigation();
-  // UI States
-  const [selected, setSelected] = useState([]);
+  const { userInfo } = useContext(AuthContext);
+  const role = String((userInfo as any)?.role || 'ADMIN').replace('ROLE_', '');
+  const [assemblyId, setAssemblyId] = useState('');
+
+  const [selected, setSelected] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const [openSort, setOpenSort] = useState(false);
-  const [workingLevel, setWorkingLevel] = useState("");
-  const [sortMode, setSortMode] = useState("latest");
+  const [workingLevel, setWorkingLevel] = useState('');
+  const [sortMode, setSortMode] = useState('latest');
   const [showDeleted, setShowDeleted] = useState(false);
   const [items, setItems] = useState([
-    { label: "All Levels", value: "" },
-    { label: "Assembly", value: "ASSEMBLY" },
-    { label: "Ward", value: "WARD" },
-    { label: "Booth", value: "BOOTH" },
+    { label: 'All Levels', value: '' },
+    { label: 'Assembly', value: 'ASSEMBLY' },
+    { label: 'Ward', value: 'WARD' },
+    { label: 'Booth', value: 'BOOTH' },
   ]);
   const [sortItems, setSortItems] = useState([
-    { label: "Latest Created", value: "latest" },
-    { label: "Oldest Created", value: "oldest" },
-    { label: "Name A-Z", value: "name-asc" },
-    { label: "Name Z-A", value: "name-desc" },
+    { label: 'Latest Created', value: 'latest' },
+    { label: 'Oldest Created', value: 'oldest' },
+    { label: 'Name A-Z', value: 'name-asc' },
+    { label: 'Name Z-A', value: 'name-desc' },
   ]);
 
-  // API + Pagination
-  const [volunteersList, setVolunteersList] = useState([]);
+  const [volunteersList, setVolunteersList] = useState<any[]>([]);
   const [page, setPage] = useState(0);
   const [size] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-
-  // Search + Debounce
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  // Debounce Effect (400ms)
   useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearch(search);
-    }, 10);
+    getAssemblyCode().then((code) => setAssemblyId(String(code || '')));
+  }, []);
+
+  const resolveSort = () => {
+    switch (sortMode) {
+      case 'name-asc':
+        return { sortBy: 'firstName', direction: 'asc' };
+      case 'name-desc':
+        return { sortBy: 'firstName', direction: 'desc' };
+      case 'oldest':
+        return { sortBy: 'id', direction: 'asc' };
+      default:
+        return { sortBy: 'id', direction: 'desc' };
+    }
+  };
+
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedSearch(search), 400);
     return () => clearTimeout(handler);
   }, [search]);
 
-  // Fetch API
-  const fetchVolunteerList = async (pageNum, isRefresh = false) => {
+  const fetchVolunteerList = async (pageNum: number, isRefresh = false) => {
     try {
       if (pageNum === 0 && !isRefresh) setLoading(true);
       if (pageNum > 0) setLoadingMore(true);
 
-      const sortField = "firstName";
-      const sortDirection = sortMode === "name-asc" || sortMode === "oldest" ? "asc" : "desc";
+      const sortConfig = resolveSort();
       const res = await CRUDAPI.getVolunteerList(
+        role,
         pageNum,
         size,
         debouncedSearch,
-        "",
-        sortField,
-        sortDirection,
-        workingLevel
+        '',
+        sortConfig.sortBy,
+        sortConfig.direction,
+        workingLevel,
+        showDeleted ? 'true' : 'false',
+        assemblyId
       );
 
-      const newData = (res?.content ?? []).map(v => ({
+      const newData = (res?.content ?? []).map((v: any) => ({
         ...v,
-        deleted: v.deleted === true || v.deleted === "true" || v.deleted === 1
+        deleted: v.deleted === true || v.deleted === 'true' || v.deleted === 1,
       }));
-      if (pageNum === 0) {
-        setVolunteersList(newData);
-      } else {
-        setVolunteersList(prev => [...prev, ...newData]);
-      }
+
+      if (pageNum === 0) setVolunteersList(newData);
+      else setVolunteersList((prev) => [...prev, ...newData]);
 
       setTotalPages(res?.totalPages ?? 1);
-
     } catch (e) {
-      console.log("Error fetching volunteers", e);
+      console.log('Error fetching volunteers', e);
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -95,13 +110,11 @@ export default function MyVolunteers() {
     }
   };
 
-  // Initial + triggered fetch
   useEffect(() => {
     setPage(0);
     fetchVolunteerList(0, true);
-  }, [debouncedSearch, workingLevel, sortMode]);
+  }, [debouncedSearch, workingLevel, sortMode, showDeleted, assemblyId, role]);
 
-  // On scroll bottom
   const loadMore = () => {
     if (!loadingMore && page + 1 < totalPages) {
       const nextPage = page + 1;
@@ -110,148 +123,162 @@ export default function MyVolunteers() {
     }
   };
 
-  // Pull-to-refresh
   const onRefresh = () => {
     setRefreshing(true);
     setPage(0);
     fetchVolunteerList(0, true);
   };
 
-  // Toggle Selection
-  const toggleSelect = (volunteerId) => {
-    if (selected.includes(volunteerId)) {
-      setSelected(selected.filter((s) => s !== volunteerId));
-    } else {
-      setSelected([...selected, volunteerId]);
-    }
+  const toggleSelect = (volunteerId: string) => {
+    setSelected((cur) =>
+      cur.includes(volunteerId) ? cur.filter((s) => s !== volunteerId) : [...cur, volunteerId]
+    );
   };
 
-  // Block / Unblock
-  const handleBlockUnblock = async (userEmail, blockValue) => {
-    const jsonReq = { userEmail, block: blockValue };
+  const handleBlockUnblock = async (userEmail: string, blockValue: boolean) => {
     try {
-      const res = await CRUDAPI.blockVolunteer(jsonReq);
-      if (res) {
-        onRefresh(); // Refresh list after block/unblock
-      }
+      await CRUDAPI.blockVolunteer({ userEmail, block: blockValue });
+      onRefresh();
     } catch (error) {
-      console.log("Error blocking/unblocking:", error);
+      console.log('Error blocking/unblocking:', error);
     }
   };
 
-  const handleDeleteUndelete = async (userEmail, deleteValue) => {
-    const jsonReq = {
-      userEmail: userEmail,
-      delete: deleteValue
-    }
+  const handleDeleteUndelete = async (userEmail: string, deleteValue: boolean) => {
     try {
-      const res = await CRUDAPI.removeVolunteer(jsonReq);
-      if (res) fetchVolunteerList(0);
+      await CRUDAPI.removeVolunteer({ userEmail, delete: deleteValue });
+      fetchVolunteerList(0);
     } catch {
       //
     }
-  }
+  };
 
   const handleBulkDelete = async () => {
-    const jsonReq = {
-      userEmails: selected,
-      action: true
-    }
     try {
-      const res = await CRUDAPI.bulkRemoveVolunteer(jsonReq)
-      if (res) fetchVolunteerList(0);
+      await CRUDAPI.bulkRemoveVolunteer({ userEmails: selected, action: true });
+      fetchVolunteerList(0);
     } catch {
       //
     }
-  }
+  };
 
   const handleBulkBlock = async () => {
-    const jsonReq = {
-      userEmails: selected,
-      action: true
-    }
     try {
-      const res = await CRUDAPI.bulkBlockVolunteer(jsonReq)
-      if (res) fetchVolunteerList(0);
+      await CRUDAPI.bulkBlockVolunteer({ userEmails: selected, action: true });
+      fetchVolunteerList(0);
     } catch {
       //
     }
-  }
+  };
 
-  const stats = volunteersList.reduce((acc, v) => {
-    const deleted = v.deleted === true || v.deleted === "true" || v.deleted === 1;
-    const blocked = v.blocked === true || v.blocked === "true" || v.blocked === 1;
-    if (deleted) acc.deleted += 1;
-    else {
-      acc.total += 1;
-      if (blocked) acc.blocked += 1;
-      else acc.active += 1;
-    }
-    return acc;
-  }, { total: 0, active: 0, blocked: 0, deleted: 0 });
+  const stats = volunteersList.reduce(
+    (acc, v) => {
+      const deleted = v.deleted === true || v.deleted === 'true' || v.deleted === 1;
+      const blocked = v.blocked === true || v.blocked === 'true' || v.blocked === 1;
+      if (deleted) acc.deleted += 1;
+      else {
+        acc.total += 1;
+        if (blocked) acc.blocked += 1;
+        else acc.active += 1;
+      }
+      return acc;
+    },
+    { total: 0, active: 0, blocked: 0, deleted: 0 }
+  );
 
   const visibleVolunteers = showDeleted
-    ? volunteersList.filter((v) => v.deleted === true || v.deleted === "true" || v.deleted === 1)
-    : volunteersList.filter((v) => !(v.deleted === true || v.deleted === "true" || v.deleted === 1));
+    ? volunteersList.filter((v) => v.deleted === true || v.deleted === 'true' || v.deleted === 1)
+    : volunteersList.filter((v) => !(v.deleted === true || v.deleted === 'true' || v.deleted === 1));
 
-  const getDisplayName = (v) => {
-    const full = `${v.firstName || ""} ${v.lastName || ""}`.trim();
-    return full || v.userName || "Volunteer";
+  const getDisplayName = (v: any) => {
+    const full = `${v.firstName || ''} ${v.lastName || ''}`.trim();
+    return full || v.userName || 'Volunteer';
   };
 
-  const getInitials = (v) => {
+  const getInitials = (v: any) => {
     const name = getDisplayName(v).trim();
-    if (!name) return "V";
-    const parts = name.split(/\s+/).filter(Boolean);
-    return parts.slice(0, 2).map((p) => p[0]?.toUpperCase() || "").join("") || "V";
+    if (!name) return 'V';
+    return name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() || '')
+      .join('');
   };
 
-  const getStatusLabel = (v) => {
-    if (v.deleted) return "DELETED";
-    if (v.blocked) return "BLOCKED";
-    return "ACTIVE";
+  const getStatusLabel = (v: any) => {
+    if (v.deleted) return 'DELETED';
+    if (v.blocked) return 'BLOCKED';
+    return 'ACTIVE';
   };
 
-  const getStatusClass = (v) => {
-    if (v.deleted) return "bg-gray-200 text-gray-700";
-    if (v.blocked) return "bg-red-100 text-red-700";
-    return "bg-green-100 text-green-700";
+  const getStatusStyle = (v: any) => {
+    if (v.deleted) return styles.badgeDeleted;
+    if (v.blocked) return styles.badgeBlocked;
+    return styles.badgeActive;
   };
 
-  const getWardText = (v) => {
-    const names = Array.isArray(v.wardNames) ? v.wardNames : [];
-    if (names.length) return names.join(", ");
-    if (Array.isArray(v.wardIds) && v.wardIds.length) return v.wardIds.join(", ");
-    return "-";
+  const getWardLabels = (v: any) => {
+    if (Array.isArray(v.wardNames) && v.wardNames.length) return v.wardNames.map(String);
+    if (Array.isArray(v.wardIds) && v.wardIds.length) return v.wardIds.map((id: any) => `Ward ${id}`);
+    return [];
   };
 
-  const getBoothText = (v) => {
-    const names = Array.isArray(v.boothNames) ? v.boothNames : [];
-    if (names.length) return names.join(", ");
-    if (Array.isArray(v.boothIds) && v.boothIds.length) return v.boothIds.join(", ");
-    return "-";
+  const getBoothLabels = (v: any) => {
+    if (Array.isArray(v.boothNames) && v.boothNames.length) return v.boothNames.map(String);
+    if (Array.isArray(v.boothIds) && v.boothIds.length) return v.boothIds.map((id: any) => `Booth ${id}`);
+    return [];
   };
 
-  const handleEdit = (v) => {
-    (navigation as any).navigate("addVolunteer", { editVolunteer: v });
+  const handleEdit = (v: any) => {
+    (navigation as any).navigate('addVolunteer', { editVolunteer: v });
+  };
+
+  const renderStatPill = (
+    label: string,
+    value: number,
+    variant: 'total' | 'active' | 'blocked' | 'deleted',
+    onPress?: () => void
+  ) => {
+    const variantStyle = STAT_PILL_VARIANTS[variant];
+    const content = (
+      <>
+        <Text style={[styles.pillLabel, variantStyle.label]} numberOfLines={1}>
+          {label}
+        </Text>
+        <Text style={[styles.pillValue, variantStyle.value]}>{value}</Text>
+      </>
+    );
+    const boxStyle = [
+      styles.statPill,
+      variantStyle.box,
+      showDeleted && variant === 'deleted' && styles.pillDeletedActive,
+    ];
+
+    if (onPress) {
+      return (
+        <TouchableOpacity style={boxStyle} onPress={onPress} activeOpacity={0.85}>
+          {content}
+        </TouchableOpacity>
+      );
+    }
+
+    return <View style={boxStyle}>{content}</View>;
   };
 
   return (
-    <View className={`flex-1 ${bgColors.customLightBlue}`}>
-      <View className={`${bgColors.white} mx-4 mt-4 rounded-3xl p-4 shadow-sm flex-1 border border-slate-200`}>
-
-        {/* SEARCH + FILTERS */}
-        <View className="bg-slate-100/80 rounded-2xl p-3 mb-2 border border-slate-200">
-          <View className="flex-row items-center">
+    <View style={styles.screen}>
+      <View style={styles.shell}>
+        <View style={styles.toolbar}>
+          <View style={styles.searchRow}>
             <TextInput
               placeholder="Search by name / phone"
-              className={`flex-1 ${bgColors.white} border border-gray-300 rounded-xl px-3 py-3`}
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={premium.textLight}
+              style={styles.searchInput}
               onChangeText={setSearch}
               autoCapitalize="none"
             />
-
-            <View className="w-36 ml-3 z-50">
+            <View style={styles.levelPicker}>
               <DropDownPicker
                 open={open}
                 value={workingLevel}
@@ -260,12 +287,15 @@ export default function MyVolunteers() {
                 setValue={setWorkingLevel}
                 setItems={setItems}
                 placeholder="All Levels"
-                style={{ borderColor: "#D1D5DB", minHeight: 48 }}
-                dropDownContainerStyle={{ borderColor: "#D1D5DB" }}
+                style={styles.dropdown}
+                dropDownContainerStyle={styles.dropdownPanel}
+                textStyle={styles.dropdownText}
+                listMode="SCROLLVIEW"
               />
             </View>
           </View>
-          <View className="mt-3 z-40">
+
+          <View style={{ zIndex: 900 }}>
             <DropDownPicker
               open={openSort}
               value={sortMode}
@@ -274,193 +304,164 @@ export default function MyVolunteers() {
               setValue={setSortMode}
               setItems={setSortItems}
               placeholder="Latest Created"
-              style={{ borderColor: "#D1D5DB", minHeight: 48 }}
-              dropDownContainerStyle={{ borderColor: "#D1D5DB" }}
+              style={styles.dropdown}
+              dropDownContainerStyle={styles.dropdownPanel}
+              textStyle={styles.dropdownText}
+              listMode="SCROLLVIEW"
             />
           </View>
-          <View className="flex-row mt-3">
-            <View className="flex-1 mr-2 rounded-xl px-3 py-2 border border-blue-200 bg-blue-100">
-              <Text className="text-blue-700 font-semibold">Total</Text>
-              <Text className="text-blue-800 text-xl font-bold">{stats.total}</Text>
-            </View>
-            <View className="flex-1 mx-1 rounded-xl px-3 py-2 border border-green-200 bg-green-100">
-              <Text className="text-green-700 font-semibold">Active</Text>
-              <Text className="text-green-800 text-xl font-bold">{stats.active}</Text>
-            </View>
-            <View className="flex-1 mx-1 rounded-xl px-3 py-2 border border-red-200 bg-red-100">
-              <Text className="text-red-700 font-semibold">Blocked</Text>
-              <Text className="text-red-800 text-xl font-bold">{stats.blocked}</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setShowDeleted((cur) => !cur)}
-              className={`flex-1 ml-2 rounded-xl px-3 py-2 border ${showDeleted ? "border-slate-400 bg-slate-200" : "border-slate-200 bg-slate-100"}`}
-            >
-              <Text className="text-slate-700 font-semibold">Deleted</Text>
-              <Text className="text-slate-800 text-xl font-bold">{stats.deleted}</Text>
-            </TouchableOpacity>
+
+          <View style={styles.statsRow}>
+            {renderStatPill('Total', stats.total, 'total')}
+            {renderStatPill('Active', stats.active, 'active')}
+            {renderStatPill('Blocked', stats.blocked, 'blocked')}
+            {renderStatPill('Deleted', stats.deleted, 'deleted', () => setShowDeleted((c) => !c))}
           </View>
         </View>
 
-        {/* SCROLL LIST */}
         <ScrollView
           showsVerticalScrollIndicator={false}
           onScroll={({ nativeEvent }) => {
             const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-            const isBottomReached =
-              layoutMeasurement.height + contentOffset.y >= contentSize.height - 20;
-            if (isBottomReached) loadMore();
+            if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 20) loadMore();
           }}
           scrollEventThrottle={400}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          contentContainerStyle={styles.listContent}
         >
-          {/* LOADING */}
           {loading && (
-            <View className="items-center py-10">
-              <ActivityIndicator size="large" />
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color={premium.primary} />
             </View>
           )}
 
-          {/* Volunteer List */}
-          {visibleVolunteers.length > 0 &&
-            visibleVolunteers?.map((v) => {
-              const selectionKey = v.userName || v.phone;
-              const reactKey = v.userName ? `${v.userName}-${v.phone}` : v.phone;
-              return (
-              <View
-                key={reactKey}
-                className="mt-4 rounded-3xl border border-blue-200 bg-slate-50 p-3"
-              >
-                <View className="flex-row items-start">
-                  <View className="w-12 h-12 rounded-2xl bg-blue-500 items-center justify-center">
-                    <Text className="text-white font-bold text-base">{getInitials(v)}</Text>
+          {visibleVolunteers.map((v) => {
+            const selectionKey = v.userName || v.phone;
+            const reactKey = v.userName ? `${v.userName}-${v.phone}` : v.phone;
+            const isSelected = selected.includes(selectionKey);
+
+            return (
+              <View key={reactKey} style={styles.card}>
+                <View style={styles.cardHead}>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>{getInitials(v)}</Text>
                   </View>
-                  <View className="ml-3 flex-1">
-                    <Text className="text-gray-900 font-semibold text-[18px]">{getDisplayName(v)}</Text>
-                    <View className="flex-row mt-2">
-                      <View className="bg-blue-100 px-2 py-1 rounded-full mr-2">
-                        <Text className="text-blue-700 text-[11px] font-semibold">{(v.assignmentType || "VOLUNTEER").toUpperCase()}</Text>
+                  <View style={styles.cardHeadMeta}>
+                    <Text style={styles.cardName}>{getDisplayName(v)}</Text>
+                    <View style={styles.tagRow}>
+                      <View style={styles.badgeLevel}>
+                        <Text style={styles.badgeLevelText}>
+                          {(v.assignmentType || 'VOLUNTEER').toUpperCase()}
+                        </Text>
                       </View>
-                      <View className={`px-2 py-1 rounded-full ${getStatusClass(v)}`}>
-                        <Text className="text-[11px] font-semibold">{getStatusLabel(v)}</Text>
+                      <View style={[styles.badgeStatus, getStatusStyle(v)]}>
+                        <Text style={styles.badgeStatusText}>{getStatusLabel(v)}</Text>
                       </View>
                     </View>
                   </View>
                 </View>
 
-                <View className="mt-3 border border-slate-200 rounded-2xl p-3 bg-white">
-                  <View className="flex-row items-center">
+                <View style={styles.detailsBox}>
+                  <View style={styles.detailsRow}>
                     <TouchableOpacity
                       onPress={() => toggleSelect(selectionKey)}
-                      className={`w-10 h-10 rounded-xl border border-gray-300 items-center justify-center ${selected.includes(selectionKey) ? bgColors.blue500 : bgColors.white}`}
+                      style={[styles.checkbox, isSelected && styles.checkboxOn]}
                     >
-                      {selected.includes(selectionKey) ? <Text className="text-white font-bold">✓</Text> : null}
+                      {isSelected ? <Text style={styles.checkMark}>✓</Text> : null}
                     </TouchableOpacity>
-                    <View className="ml-3 flex-1">
-                      <Text className="text-gray-700">Phone : <Text className="font-bold text-gray-900">{v.phone || "-"}</Text></Text>
-                      <Text className="text-gray-700 mt-1">User ID : <Text className="font-bold text-gray-900">{v.userName || "-"}</Text></Text>
-                      <Text className="text-gray-700 mt-1">Wards : <Text className="font-bold text-gray-900">{getWardText(v)}</Text></Text>
-                      <Text className="text-gray-700 mt-1">Booths : <Text className="font-bold text-blue-700">{getBoothText(v)}</Text></Text>
+                    <View style={styles.detailsCol}>
+                      <View style={styles.infoLine}>
+                        <Text style={styles.infoLabel}>Phone : </Text>
+                        <Text style={styles.infoValue}>{v.phone || '-'}</Text>
+                      </View>
+                      <View style={styles.infoLine}>
+                        <Text style={styles.infoLabel}>User ID : </Text>
+                        <Text style={styles.infoValue}>{v.userName || '-'}</Text>
+                      </View>
+                      <View style={styles.infoLine}>
+                        <Text style={styles.infoLabel}>Wards : </Text>
+                        <ListPreview items={getWardLabels(v)} />
+                      </View>
+                      <View style={styles.infoLine}>
+                        <Text style={styles.infoLabel}>Booths : </Text>
+                        <ListPreview items={getBoothLabels(v)} accentColor={premium.primary} />
+                      </View>
                     </View>
                   </View>
 
-                  <View className="flex-row mt-3 flex-wrap">
-                    <TouchableOpacity
-                      onPress={() => handleEdit(v)}
-                      className="bg-blue-600 px-4 py-2 rounded-full mr-2 mb-2"
-                    >
-                      <Text className="text-white text-xs font-semibold">Edit</Text>
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity style={styles.btnEdit} onPress={() => handleEdit(v)}>
+                      <Text style={styles.btnEditText}>Edit</Text>
                     </TouchableOpacity>
                     {v.deleted ? (
                       <TouchableOpacity
+                        style={styles.btnNeutral}
                         onPress={() => handleDeleteUndelete(v.userName, false)}
-                        className="bg-slate-500 px-4 py-2 rounded-full mr-2 mb-2"
                       >
-                        <Text className="text-white text-xs font-semibold">Undelete</Text>
+                        <Text style={styles.btnNeutralText}>Undelete</Text>
                       </TouchableOpacity>
                     ) : (
                       <TouchableOpacity
+                        style={styles.btnNeutral}
                         onPress={() => handleDeleteUndelete(v.userName, true)}
-                        className="bg-slate-600 px-4 py-2 rounded-full mr-2 mb-2"
                       >
-                        <Text className="text-white text-xs font-semibold">Delete</Text>
+                        <Text style={styles.btnNeutralText}>Delete</Text>
                       </TouchableOpacity>
                     )}
-
                     {v.blocked ? (
                       <TouchableOpacity
+                        style={styles.btnSuccess}
                         onPress={() => handleBlockUnblock(v.userName, false)}
-                        className="bg-green-600 px-4 py-2 rounded-full mb-2"
                       >
-                        <Text className="text-white text-xs font-semibold">Unblock</Text>
+                        <Text style={styles.btnSuccessText}>Unblock</Text>
                       </TouchableOpacity>
                     ) : (
                       <TouchableOpacity
+                        style={styles.btnDanger}
                         onPress={() => handleBlockUnblock(v.userName, true)}
-                        className="bg-red-600 px-4 py-2 rounded-full mb-2"
                       >
-                        <Text className="text-white text-xs font-semibold">Block</Text>
+                        <Text style={styles.btnDangerText}>Block</Text>
                       </TouchableOpacity>
                     )}
                   </View>
                 </View>
               </View>
-          )})}
+            );
+          })}
 
-          {/* Loading More Spinner */}
           {loadingMore && (
-            <View className="items-center py-6">
-              <ActivityIndicator size="small" />
+            <View style={styles.centered}>
+              <ActivityIndicator size="small" color={premium.primary} />
             </View>
           )}
 
-          {/* Empty State */}
           {!loading && visibleVolunteers.length === 0 && (
-            <Text className="text-center text-gray-500 mt-6">
-              No volunteers found.
-            </Text>
+            <Text style={styles.emptyText}>No volunteers found.</Text>
           )}
 
-          {/* Selected Count */}
           {selected.length > 0 && (
-            <View className={`${bgColors.blue50} p-3 rounded-xl mt-4`}>
-              <Text className="text-blue-700 font-semibold">
-                Selected Volunteers: {selected.length}
-              </Text>
+            <View style={styles.selectedBanner}>
+              <Text style={styles.selectedBannerText}>Selected Volunteers: {selected.length}</Text>
             </View>
           )}
 
-          {/* ACTION BUTTONS */}
-          <Text className="text-gray-600 font-semibold mt-5 text-[18px]">Actions</Text>
-
-          <View className="flex-row space-x-3 mt-3">
+          <Text style={styles.actionsTitle}>Actions</Text>
+          <View style={styles.bulkRow}>
             <TouchableOpacity
               disabled={selected.length === 0}
-              className={`px-4 py-3 rounded-xl border ${selected.length === 0
-                ? `border-gray-300 ${bgColors.gray100}`
-                : `border-gray-400 ${bgColors.white}`
-                }`}
+              style={[styles.bulkBtnOutline, selected.length === 0 && styles.bulkBtnDisabled]}
               onPress={handleBulkDelete}
             >
-              <Text
-                className={
-                  selected.length === 0 ? "text-gray-400" : "text-gray-700"
-                }
-              >
+              <Text style={[styles.bulkBtnOutlineText, selected.length === 0 && styles.bulkBtnDisabledText]}>
                 Delete Selected
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               disabled={selected.length === 0}
-              className={`flex-1 px-4 py-3 rounded-xl ml-3 ${selected.length === 0 ? bgColors.red300 : bgColors.red500
-                }`}
+              style={[styles.bulkBtnDanger, selected.length === 0 && styles.bulkBtnDisabledFill]}
               onPress={handleBulkBlock}
             >
-              <Text className="text-white text-center">
-                Block Selected (Immediate)
-              </Text>
+              <Text style={styles.bulkBtnDangerText}>Block Selected (Immediate)</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -468,3 +469,178 @@ export default function MyVolunteers() {
     </View>
   );
 }
+
+const STAT_PILL_VARIANTS = {
+  total: {
+    box: { backgroundColor: 'rgba(59, 130, 246, 0.12)', borderColor: 'rgba(59, 130, 246, 0.25)' },
+    label: { color: '#1E40AF' },
+    value: { color: '#1E3A8A' },
+  },
+  active: {
+    box: { backgroundColor: 'rgba(16, 185, 129, 0.12)', borderColor: 'rgba(16, 185, 129, 0.25)' },
+    label: { color: '#047857' },
+    value: { color: '#065F46' },
+  },
+  blocked: {
+    box: { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.22)' },
+    label: { color: '#B91C1C' },
+    value: { color: '#991B1B' },
+  },
+  deleted: {
+    box: { backgroundColor: 'rgba(100, 116, 139, 0.12)', borderColor: 'rgba(100, 116, 139, 0.28)' },
+    label: { color: '#475569' },
+    value: { color: '#334155' },
+  },
+};
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: premium.bg },
+  shell: {
+    flex: 1,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    backgroundColor: premium.bgCard,
+    borderRadius: premium.radius.xl,
+    borderWidth: 1,
+    borderColor: premium.border,
+    overflow: 'hidden',
+    ...premium.shadow.card,
+  },
+  toolbar: {
+    padding: 14,
+    backgroundColor: '#F8FAFC',
+    borderBottomWidth: 1,
+    borderBottomColor: premium.border,
+    zIndex: 2000,
+  },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  searchInput: {
+    flex: 1,
+    backgroundColor: premium.bgCard,
+    borderWidth: 1,
+    borderColor: premium.border,
+    borderRadius: premium.radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: premium.text,
+  },
+  levelPicker: { width: 130, zIndex: 3000 },
+  dropdown: { borderColor: premium.border, minHeight: 46, borderRadius: premium.radius.md },
+  dropdownPanel: { borderColor: premium.border },
+  dropdownText: { fontSize: 13, fontWeight: '600', color: premium.text },
+  statsRow: {
+    flexDirection: 'row',
+    marginTop: 12,
+    gap: 8,
+  },
+  statPill: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  pillLabel: { fontSize: 11, fontWeight: '700', flexShrink: 1, marginRight: 4 },
+  pillValue: { fontSize: 17, fontWeight: '800' },
+  pillDeletedActive: { backgroundColor: 'rgba(100, 116, 139, 0.22)' },
+  listContent: { padding: 14, paddingBottom: 32 },
+  centered: { alignItems: 'center', paddingVertical: 24 },
+  card: {
+    marginBottom: 14,
+    borderRadius: premium.radius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.2)',
+    backgroundColor: '#F8FAFC',
+    padding: 12,
+  },
+  cardHead: { flexDirection: 'row', alignItems: 'center' },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: premium.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  cardHeadMeta: { marginLeft: 12, flex: 1 },
+  cardName: { fontSize: 17, fontWeight: '700', color: premium.text },
+  tagRow: { flexDirection: 'row', marginTop: 8, flexWrap: 'wrap', gap: 6 },
+  badgeLevel: { backgroundColor: '#DBEAFE', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+  badgeLevelText: { fontSize: 10, fontWeight: '700', color: '#1D4ED8' },
+  badgeStatus: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+  badgeActive: { backgroundColor: '#D1FAE5' },
+  badgeBlocked: { backgroundColor: '#FEE2E2' },
+  badgeDeleted: { backgroundColor: '#E2E8F0' },
+  badgeStatusText: { fontSize: 10, fontWeight: '700', color: premium.text },
+  detailsBox: {
+    marginTop: 12,
+    backgroundColor: premium.bgCard,
+    borderRadius: premium.radius.md,
+    borderWidth: 1,
+    borderColor: premium.border,
+    padding: 12,
+  },
+  detailsRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  checkbox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: premium.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: premium.bgCard,
+  },
+  checkboxOn: { backgroundColor: premium.primary, borderColor: premium.primary },
+  checkMark: { color: '#fff', fontWeight: '800' },
+  detailsCol: { flex: 1, marginLeft: 10 },
+  infoLine: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6, alignItems: 'flex-start' },
+  infoLabel: { fontSize: 14, color: premium.textMuted, marginRight: 4 },
+  infoValue: { fontSize: 14, fontWeight: '700', color: premium.text },
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, gap: 8 },
+  btnEdit: { backgroundColor: premium.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  btnEditText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  btnNeutral: { backgroundColor: '#475569', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  btnNeutralText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  btnDanger: { backgroundColor: premium.error, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  btnDangerText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  btnSuccess: { backgroundColor: premium.success, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  btnSuccessText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  emptyText: { textAlign: 'center', color: premium.textMuted, marginTop: 20 },
+  selectedBanner: {
+    backgroundColor: '#EFF6FF',
+    padding: 12,
+    borderRadius: premium.radius.md,
+    marginTop: 8,
+  },
+  selectedBannerText: { color: '#1D4ED8', fontWeight: '700' },
+  actionsTitle: { fontSize: 17, fontWeight: '700', color: premium.textMuted, marginTop: 16 },
+  bulkRow: { flexDirection: 'row', marginTop: 10, gap: 10 },
+  bulkBtnOutline: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: premium.border,
+    paddingVertical: 12,
+    borderRadius: premium.radius.md,
+    alignItems: 'center',
+  },
+  bulkBtnOutlineText: { color: premium.text, fontWeight: '600' },
+  bulkBtnDanger: {
+    flex: 1.2,
+    backgroundColor: premium.error,
+    paddingVertical: 12,
+    borderRadius: premium.radius.md,
+    alignItems: 'center',
+  },
+  bulkBtnDangerText: { color: '#fff', fontWeight: '700', textAlign: 'center', fontSize: 12 },
+  bulkBtnDisabled: { opacity: 0.5 },
+  bulkBtnDisabledFill: { backgroundColor: '#FCA5A5' },
+  bulkBtnDisabledText: { color: premium.textLight },
+});

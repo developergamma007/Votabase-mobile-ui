@@ -2,7 +2,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import dummyData from '../Json/dummyBooth.json'
+const dummyData = {
+  boothId: 'DEMO-001',
+  boothName: 'Sample Booth',
+  wardId: 'WARD-01',
+  assemblyCode: '151',
+};
 import { bgColors } from '../constants/colors';
 
 export default function LocalStorageExample() {

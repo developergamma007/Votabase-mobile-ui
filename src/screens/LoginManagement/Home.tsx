@@ -1,9 +1,10 @@
-import React, { useContext } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Dimensions } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import LinearGradient from "react-native-linear-gradient";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { AuthContext } from "../../context/AuthContext";
+import { CRUDAPI } from "../../apis/Api";
 
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - 48) / 2;
@@ -17,7 +18,29 @@ type RootStackParamList = {
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 
 export default function LandingPage({ navigation }: Props) {
-  const { userInfo } = useContext(AuthContext) as any;
+  const { userInfo } = useContext(AuthContext);
+  const [printEnabled, setPrintEnabled] = useState(true);
+
+  const role = String(
+    (typeof userInfo === 'object' && userInfo && (userInfo.role || userInfo.assignmentType)) || 'USER'
+  )
+    .replace(/^ROLE_/, '')
+    .toUpperCase();
+
+  useEffect(() => {
+    if (role && role !== 'BOOTH') {
+      CRUDAPI.fetchMessageTemplate(null, 'PRINT')
+        .then((res) => {
+          const enabled = res?.data?.result?.enabled;
+          if (enabled !== undefined) setPrintEnabled(enabled);
+        })
+        .catch(() => setPrintEnabled(true));
+    }
+  }, [role]);
+
+  const showFamily = ['SUPER_ADMIN', 'ADMIN', 'WARD', 'BOOTH', 'USER'].includes(role);
+  const showPrint = printEnabled || role === 'SUPER_ADMIN';
+
   const resolvedName =
     userInfo?.name ||
     userInfo?.firstName ||
@@ -71,44 +94,53 @@ export default function LandingPage({ navigation }: Props) {
           {renderGridItem("Search Booth", "location", "Search Booth", "#10B981")}
         </View>
 
-        {/* Featured Sections */}
         <View style={styles.sectionsContainer}>
-          {renderWideCard(
-            "Voters Family", 
-            "Household-based view for outreach planning.", 
-            "people", 
-            "boothForFamily", 
+          <Text style={styles.sectionLabel}>WORKSPACE</Text>
+          {showFamily && renderWideCard(
+            "Voter's Family",
+            "Household-based view for outreach planning.",
+            "people",
+            "boothForFamily",
             "#8B5CF6"
           )}
-          {renderWideCard(
-            "Meetings", 
-            "Schedule, assign and track meeting notes.", 
-            "calendar", 
-            "meetings", 
+          {showFamily && renderWideCard(
+            "Meetings",
+            "Schedule, assign and track meeting notes.",
+            "calendar",
+            "meetings",
             "#F59E0B"
           )}
           {renderWideCard(
-            "Poll Day", 
-            "Booth-wise tasks & turnout tracking.", 
-            "checkbox", 
-            "pollDay", 
+            "Poll Day",
+            "Booth-wise tasks & turnout tracking.",
+            "checkbox",
+            "pollDay",
             "#EF4444"
           )}
-          {renderWideCard(
-            "Promotions",
-            "Configure WhatsApp/SMS campaigns ward-wise.",
-            "megaphone",
-            "promotions",
-            "#0EA5E9"
-          )}
-          {renderWideCard(
-            "Print", 
-            "PDF/Excel exports for lists and slips.", 
-            "print", 
-            "print", 
+          {showPrint && renderWideCard(
+            "Print",
+            "PDF/Excel exports for lists and slips.",
+            "print",
+            "print",
             "#64748B"
           )}
         </View>
+
+        {role !== 'BOOTH' && (
+          <View style={styles.sectionsContainer}>
+            <Text style={styles.sectionLabel}>VOLUNTEERS</Text>
+            {renderWideCard("Add Volunteer", "Onboard new field volunteers.", "person-add", "addVolunteer", "#2563EB")}
+            {renderWideCard("Manage Volunteers", "Search, sort and manage your team.", "people", "myVolunteers", "#0EA5E9")}
+            {renderWideCard("Volunteer Analysis", "Maps, families and performance.", "bar-chart", "volunteerAnalysis", "#6366F1")}
+          </View>
+        )}
+
+        {role === 'SUPER_ADMIN' && (
+          <View style={styles.sectionsContainer}>
+            <Text style={styles.sectionLabel}>ADMIN</Text>
+            {renderWideCard("Promotions", "Message templates and campaigns.", "megaphone", "promotions", "#EC4899")}
+          </View>
+        )}
       </ScrollView>
     </LinearGradient>
   );
@@ -170,6 +202,15 @@ const styles = StyleSheet.create({
   sectionsContainer: {
     paddingHorizontal: 16,
     gap: 16,
+    marginBottom: 8,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.45)',
+    letterSpacing: 1.2,
+    marginBottom: 4,
+    marginLeft: 4,
   },
   wideCard: {
     flexDirection: 'row',

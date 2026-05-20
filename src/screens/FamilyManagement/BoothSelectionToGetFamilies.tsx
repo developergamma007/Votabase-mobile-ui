@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Share } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { useNavigation } from "@react-navigation/native";
 import { CRUDAPI, getAssemblyCode, GOOGLE_MAPS_API_KEY } from "../../apis/Api";
@@ -7,9 +7,24 @@ import { bgColors } from "../../constants/colors";
 import DropDownPicker from "react-native-dropdown-picker";
 import { GetCurrentLocation } from "../../components/GetCurrentLocation";
 import { WebView } from "react-native-webview";
+import {
+  FAMILY_AVAILABILITY_OPTIONS,
+  FAMILY_POINT_OPTIONS,
+  getNextFamilyNumber,
+  hasHouseMarkingFields,
+  normalizeVoterForInfo,
+  sortFamiliesByNumber,
+  getVoterRelationDisplay,
+  getVoterPhoneDisplay,
+  getVoterHouseDisplay,
+} from "../../components/FamilyFormHelpers";
+import { AuthContext } from "../../context/AuthContext";
 
 export default function VotersFamilyScreen() {
   const navigation = useNavigation();
+  const { userInfo } = React.useContext(AuthContext) as any;
+  const role = String(userInfo?.role || "").replace("ROLE_", "").toUpperCase();
+  const isSuperAdmin = role === "SUPER_ADMIN";
   const [assemblyCode, setAssemblyCode] = useState("");
   const [openAssembly, setOpenAssembly] = useState(false);
   const [assemblyItems, setAssemblyItems] = useState<any[]>([]);
@@ -17,6 +32,17 @@ export default function VotersFamilyScreen() {
 
   const [familyName, setFamilyName] = useState("");
   const [familyAddress, setFamilyAddress] = useState("");
+  const [roadName, setRoadName] = useState("");
+  const [buildingNumber, setBuildingNumber] = useState("");
+  const [buildingName, setBuildingName] = useState("");
+  const [flatNumber, setFlatNumber] = useState("");
+  const [familyNumber, setFamilyNumber] = useState("");
+  const [tagLeader, setTagLeader] = useState("");
+  const [familyAvailability, setFamilyAvailability] = useState("Available");
+  const [roadSuggestions, setRoadSuggestions] = useState<string[]>([]);
+  const [leaderSuggestions, setLeaderSuggestions] = useState<string[]>([]);
+  const [showRoadSuggestions, setShowRoadSuggestions] = useState(false);
+  const [showLeaderSuggestions, setShowLeaderSuggestions] = useState(false);
   const [memberQuery, setMemberQuery] = useState("");
   const [memberSuggestions, setMemberSuggestions] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
@@ -26,7 +52,6 @@ export default function VotersFamilyScreen() {
   const [familyNature, setFamilyNature] = useState("NA");
   const [familyPoints, setFamilyPoints] = useState("5");
   const [showBuildingTag, setShowBuildingTag] = useState(false);
-  const [buildingName, setBuildingName] = useState("");
   const [buildingAddress, setBuildingAddress] = useState("");
   const [hasAssociation, setHasAssociation] = useState(false);
   const [associationName, setAssociationName] = useState("");
@@ -44,6 +69,7 @@ export default function VotersFamilyScreen() {
   const [openHead, setOpenHead] = useState(false);
   const [openNature, setOpenNature] = useState(false);
   const [openPoints, setOpenPoints] = useState(false);
+  const [openAvailability, setOpenAvailability] = useState(false);
 
   const [economicItems, setEconomicItems] = useState([
     { label: "NA", value: "NA" },
@@ -57,12 +83,32 @@ export default function VotersFamilyScreen() {
     { label: "C", value: "C" },
     { label: "NA", value: "NA" },
   ]);
-  const [pointItems, setPointItems] = useState([
-    { label: "5", value: "5" },
-    { label: "10", value: "10" },
-    { label: "15", value: "15" },
-    { label: "20", value: "20" },
-  ]);
+  const [pointItems, setPointItems] = useState(FAMILY_POINT_OPTIONS);
+  const [availabilityItems, setAvailabilityItems] = useState(
+    FAMILY_AVAILABILITY_OPTIONS.map((item) => ({ label: item, value: item }))
+  );
+
+  const loadFamilySuggestions = async () => {
+    try {
+      const [roadRes, leaderRes] = await Promise.all([
+        CRUDAPI.fetchFamilySuggestions("road").catch(() => ({ data: { result: [] } })),
+        CRUDAPI.fetchFamilySuggestions("leader").catch(() => ({ data: { result: [] } })),
+      ]);
+      setRoadSuggestions(roadRes?.data?.result || roadRes?.result || []);
+      setLeaderSuggestions(leaderRes?.data?.result || leaderRes?.result || []);
+    } catch {
+      setRoadSuggestions([]);
+      setLeaderSuggestions([]);
+    }
+  };
+
+  useEffect(() => {
+    if (hasHouseMarkingFields(buildingNumber, buildingName, flatNumber)) {
+      setFamilyNumber(String(getNextFamilyNumber(families)));
+    } else {
+      setFamilyNumber("");
+    }
+  }, [buildingNumber, buildingName, flatNumber, families]);
 
   useEffect(() => {
     const loadContext = async () => {
@@ -73,13 +119,20 @@ export default function VotersFamilyScreen() {
         const payload = dropdownResp?.data?.result || dropdownResp?.result || dropdownResp?.data || [];
         const items = Array.isArray(payload)
           ? payload.map((a: any) => ({
-              label: a?.name || a?.label || a?.assemblyName || `${a?.code || a?.assemblyCode || ''}`,
-              value: String(a?.code || a?.assemblyCode || a?.id || code),
-            }))
+            label: a?.name || a?.label || a?.assemblyName || `${a?.code || a?.assemblyCode || ''}`,
+            value: a?.code || a?.assemblyCode || String(a?.id || code),
+          }))
           : [];
         setAssemblyItems(items.length ? items : [{ label: String(code), value: String(code) }]);
       } catch {
         setAssemblyItems([{ label: String(code), value: String(code) }]);
+      }
+      await loadFamilySuggestions();
+      try {
+        const all = await CRUDAPI.fetchAllFamilies("", undefined);
+        setFamilies(sortFamiliesByNumber(all));
+      } catch {
+        // keep empty; next family number defaults to 1
       }
     };
     loadContext();
@@ -106,14 +159,64 @@ export default function VotersFamilyScreen() {
   const loadFamilies = async () => {
     setFamiliesLoading(true);
     try {
-      const res = await CRUDAPI.fetchFamilies("", 0, 100, undefined);
-      const payload = res?.content || res?.data?.content || res?.data?.result || res?.result || [];
-      setFamilies(Array.isArray(payload) ? payload : []);
+      const all = await CRUDAPI.fetchAllFamilies("", undefined);
+      setFamilies(sortFamiliesByNumber(all));
     } catch {
       setFamilies([]);
     } finally {
       setFamiliesLoading(false);
     }
+  };
+
+  const resetNewFamilyForm = () => {
+    setFamilyName("");
+    setFamilyAddress("");
+    setRoadName("");
+    setBuildingNumber("");
+    setBuildingName("");
+    setFlatNumber("");
+    setFamilyNumber("");
+    setTagLeader("");
+    setFamilyAvailability("Available");
+    setMembers([]);
+    setHeadEpicNo("");
+    setHeadPhone("");
+    setEconomicStatus("NA");
+    setFamilyNature("NA");
+    setFamilyPoints("5");
+    setShowBuildingTag(false);
+    setBuildingAddress("");
+    setHasAssociation(false);
+    setAssociationName("");
+    setAssociationHeadName("");
+    setAssociationHeadPhone("");
+    setLocation(null);
+    setMemberQuery("");
+    setMemberSuggestions([]);
+    setShowRoadSuggestions(false);
+    setShowLeaderSuggestions(false);
+    setError("");
+    setSuccess("");
+  };
+
+  const downloadFamiliesExcel = async () => {
+    if (!families.length) return;
+    const headers = [
+      "Family Name", "Road Name", "Family Number", "Flat No", "Building Number", "Building Name",
+      "Head of Family", "Head EPIC", "Members", "Availability", "Points", "Tag Leader", "Address", "Member Details",
+    ];
+    const rows = families.map((f: any) => {
+      const memberText = (f.members || [])
+        .map((m: any, i: number) => `${i + 1}. ${m.voterName || "-"} | ${m.relationName || "-"} | ${m.epicNo || "-"}`)
+        .join(" ; ");
+      return [
+        f.familyName, f.roadName, f.familyNumber, f.flatNumber, f.buildingNumber, f.buildingName,
+        f.headName, f.headEpicNo, f.memberCount ?? f.members?.length, f.familyAvailability,
+        f.points, f.tagLeader, f.familyAddress, memberText,
+      ].map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",");
+    });
+    const csv = [headers.join(","), ...rows].join("\n");
+    await Share.share({ title: "Families Export", message: csv });
   };
 
   useEffect(() => {
@@ -137,14 +240,23 @@ export default function VotersFamilyScreen() {
     setMembers((prev) => [...prev, {
       epicNo: voter.epicNo,
       voterName,
-      phone: voter.mobile || "",
-      relationName: voter.relationNameEn || voter.relationNameLocal || "",
-      houseNo: voter.houseNoEn || voter.houseNoLocal || "",
-      boothId
+      phone: getVoterPhoneDisplay(voter),
+      relationName: getVoterRelationDisplay(voter),
+      houseNo: getVoterHouseDisplay(voter),
+      boothId,
+      rawVoter: voter,
     }]);
     setMemberQuery("");
     setMemberSuggestions([]);
     if (!headEpicNo) setHeadEpicNo(voter.epicNo);
+  };
+
+  const openVoterInfo = (member: any) => {
+    if (!member?.rawVoter) return;
+    (navigation as any).navigate("Voter Info", {
+      voter: normalizeVoterForInfo(member.rawVoter, member.boothId),
+      booth: { boothId: member.boothId },
+    });
   };
 
   const removeMember = (epicNo: string) => {
@@ -172,15 +284,28 @@ export default function VotersFamilyScreen() {
     setSuccess("");
     try {
       if (!familyName.trim()) throw new Error("Family name is required");
+      if (!roadName.trim()) throw new Error("Road name is required");
       if (!familyAddress.trim()) throw new Error("Family Address is required");
       if (members.length === 0) throw new Error("Add at least one member");
       if (!headEpicNo) throw new Error("Pick head of family");
       const boothId = members.find((m) => m.boothId)?.boothId;
       if (!boothId) throw new Error("Member booth info missing");
 
+      if (!hasHouseMarkingFields(buildingNumber, buildingName, flatNumber)) {
+        throw new Error("Building Number, Building Name, and Flat Number are required");
+      }
+      const generatedFamilyNumber = String(getNextFamilyNumber(families));
+
       await CRUDAPI.createFamily({
         familyName,
         familyAddress,
+        roadName: roadName.trim(),
+        buildingNumber: buildingNumber.trim() || null,
+        buildingName: buildingName.trim() || null,
+        flatNumber: flatNumber.trim() || null,
+        familyNumber: generatedFamilyNumber || null,
+        tagLeader: tagLeader.trim() || null,
+        familyAvailability,
         headEpicNo,
         memberEpicNos: members.map((m) => m.epicNo),
         boothId: Number(boothId),
@@ -189,7 +314,6 @@ export default function VotersFamilyScreen() {
         pointsProvided: 0,
         economicStatus,
         familyNature,
-        buildingName: showBuildingTag ? buildingName : null,
         buildingAddress: showBuildingTag ? buildingAddress : null,
         hasAssociation: showBuildingTag ? hasAssociation : false,
         associationName: showBuildingTag && hasAssociation ? associationName : null,
@@ -200,22 +324,10 @@ export default function VotersFamilyScreen() {
       });
 
       setSuccess("Family saved successfully.");
-      setFamilyName("");
-      setFamilyAddress("");
-      setMembers([]);
-      setHeadEpicNo("");
-      setHeadPhone("");
-      setEconomicStatus("NA");
-      setFamilyNature("NA");
-      setFamilyPoints("5");
-      setShowBuildingTag(false);
-      setBuildingName("");
-      setBuildingAddress("");
-      setHasAssociation(false);
-      setAssociationName("");
-      setAssociationHeadName("");
-      setAssociationHeadPhone("");
-      setLocation(null);
+      await loadFamilySuggestions();
+      const all = await CRUDAPI.fetchAllFamilies("", undefined);
+      setFamilies(sortFamiliesByNumber(all));
+      resetNewFamilyForm();
     } catch (e: any) {
       setError(e?.message || "Failed to create family.");
     } finally {
@@ -261,9 +373,10 @@ export default function VotersFamilyScreen() {
             setOpen={setOpenAssembly}
             setValue={setAssemblyCode}
             setItems={setAssemblyItems}
-            style={{ borderColor: "#CBD5E1", minHeight: 46 }}
-            dropDownContainerStyle={{ borderColor: "#CBD5E1" }}
-            textStyle={{ fontSize: 15, fontWeight: "700", color: "#0f172a" }}
+            style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
+            dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+            textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
+            placeholderStyle={{ color: '#94A3B8' }}
           />
         </View>
         <View className="bg-slate-100 border border-slate-200 rounded-2xl p-2 flex-row mb-5">
@@ -292,6 +405,109 @@ export default function VotersFamilyScreen() {
                 <Text className="text-slate-600 mb-2 font-semibold">Family Address</Text>
                 <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={familyAddress} onChangeText={setFamilyAddress} placeholder="Family Address" />
               </View>
+            </View>
+
+            <View className="mt-4">
+              <Text className="text-slate-600 mb-2 font-semibold">Road Name (Mandatory)</Text>
+              <View className="flex-row gap-2">
+                <TextInput
+                  className="flex-1 border border-slate-300 bg-white rounded-xl px-4 py-3"
+                  value={roadName}
+                  onChangeText={(text) => {
+                    setRoadName(text);
+                    setShowRoadSuggestions(true);
+                  }}
+                  onFocus={() => setShowRoadSuggestions(true)}
+                  placeholder="Road name"
+                />
+                <TouchableOpacity
+                  className="bg-blue-600 rounded-xl px-4 justify-center"
+                  onPress={() => {
+                    if (!roadName.trim()) {
+                      setError("Road name is required.");
+                      return;
+                    }
+                    setError("");
+                    setSuccess("Road name added for house marking.");
+                    setShowRoadSuggestions(false);
+                  }}
+                >
+                  <Text className="text-white font-bold">Add</Text>
+                </TouchableOpacity>
+              </View>
+              {showRoadSuggestions && roadSuggestions.length > 0 ? (
+                <View className="border border-slate-200 rounded-xl mt-2 bg-white max-h-36">
+                  <ScrollView nestedScrollEnabled>
+                    {roadSuggestions
+                      .filter((item) => !roadName.trim() || item.toLowerCase().includes(roadName.trim().toLowerCase()))
+                      .slice(0, 8)
+                      .map((item) => (
+                        <TouchableOpacity key={item} className="px-3 py-2 border-b border-slate-100" onPress={() => { setRoadName(item); setShowRoadSuggestions(false); }}>
+                          <Text className="text-slate-800">{item}</Text>
+                        </TouchableOpacity>
+                      ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+            </View>
+
+            <View className="flex-row gap-3 mt-4 flex-wrap">
+              <View className="flex-1 min-w-[45%]">
+                <Text className="text-slate-600 mb-2 font-semibold">Building Number</Text>
+                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={buildingNumber} onChangeText={setBuildingNumber} placeholder="Building Number" />
+              </View>
+              <View className="flex-1 min-w-[45%]">
+                <Text className="text-slate-600 mb-2 font-semibold">Building Name</Text>
+                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={buildingName} onChangeText={setBuildingName} placeholder="Building Name" />
+              </View>
+              <View className="flex-1 min-w-[45%]">
+                <Text className="text-slate-600 mb-2 font-semibold">Flat Number</Text>
+                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={flatNumber} onChangeText={setFlatNumber} placeholder="Flat Number" />
+              </View>
+              <View className="flex-1 min-w-[45%]">
+                <Text className="text-slate-600 mb-2 font-semibold">Family Number</Text>
+                <TextInput className="border border-slate-200 bg-slate-100 rounded-xl px-4 py-3 text-slate-600" value={familyNumber} editable={false} placeholder="Auto (1, 2, 3…)" keyboardType="number-pad" />
+              </View>
+            </View>
+
+            <View className="mt-4 z-40">
+              <Text className="text-slate-600 mb-2 font-semibold">Tag a Leader</Text>
+              <TextInput
+                className="border border-slate-300 bg-white rounded-xl px-4 py-3"
+                value={tagLeader}
+                onChangeText={(text) => { setTagLeader(text); setShowLeaderSuggestions(true); }}
+                onFocus={() => setShowLeaderSuggestions(true)}
+                placeholder="Leader name"
+              />
+              {showLeaderSuggestions && leaderSuggestions.length > 0 ? (
+                <View className="border border-slate-200 rounded-xl mt-2 bg-white max-h-36">
+                  <ScrollView nestedScrollEnabled>
+                    {leaderSuggestions
+                      .filter((item) => !tagLeader.trim() || item.toLowerCase().includes(tagLeader.trim().toLowerCase()))
+                      .slice(0, 8)
+                      .map((item) => (
+                        <TouchableOpacity key={item} className="px-3 py-2 border-b border-slate-100" onPress={() => { setTagLeader(item); setShowLeaderSuggestions(false); }}>
+                          <Text className="text-slate-800">{item}</Text>
+                        </TouchableOpacity>
+                      ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+            </View>
+
+            <View className="mt-4 z-30">
+              <Text className="text-slate-700 font-semibold mb-2">Family Availability</Text>
+              <DropDownPicker
+                open={openAvailability}
+                value={familyAvailability}
+                items={availabilityItems}
+                setOpen={setOpenAvailability}
+                setValue={setFamilyAvailability}
+                setItems={setAvailabilityItems}
+                style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 48 }}
+                dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+                textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
+              />
             </View>
 
             <View className="mt-4 border border-dashed border-slate-300 rounded-2xl h-56 overflow-hidden bg-slate-50">
@@ -332,42 +548,55 @@ export default function VotersFamilyScreen() {
                 {memberSuggestions.slice(0, 8).map((item: any, idx) => (
                   <TouchableOpacity key={`${String(item?.epicNo || item?.voterId || item?.firstMiddleNameEn || "suggestion")}-${idx}`} className="px-3 py-2 border-b border-slate-100" onPress={() => addMember(item)}>
                     <Text className="font-semibold text-slate-800">{[item.firstMiddleNameEn, item.lastNameEn].filter(Boolean).join(" ") || item.epicNo}</Text>
-                    <Text className="text-slate-500 text-xs">EPIC: {item.epicNo || "-"} | Mobile: {item.mobile || "-"}</Text>
+                    <Text className="text-slate-500 text-xs">
+                      {item.epicNo || "-"} · {getVoterRelationDisplay(item) || "Relation -"} · {getVoterPhoneDisplay(item) || "No phone"}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             ) : null}
 
-            <View className="mt-3 border border-slate-200 rounded-2xl overflow-hidden">
-              <View className="bg-slate-100 flex-row px-3 py-2">
-                <Text className="flex-1 font-bold text-slate-700">Name</Text>
-                <Text className="w-24 font-bold text-slate-700">EPIC</Text>
-                <Text className="w-28 font-bold text-slate-700">Relation</Text>
-                <Text className="w-24 font-bold text-slate-700">Phone</Text>
-                <Text className="w-24 font-bold text-slate-700">House No</Text>
-                <Text className="w-20 font-bold text-slate-700">Actions</Text>
-              </View>
-              {members.map((m, memberIndex) => (
-                <View key={`${String(m?.epicNo || m?.memberId || m?.voterName || "member")}-${memberIndex}`} className="flex-row items-center px-3 py-2 border-t border-slate-100">
-                  <View className="flex-1">
-                    <Text className="text-slate-800 font-semibold">{m.voterName}</Text>
-                    <TouchableOpacity onPress={() => setHeadEpicNo(m.epicNo)}>
-                      <Text className={`text-xs mt-1 ${headEpicNo === m.epicNo ? "text-blue-600 font-bold" : "text-slate-500"}`}>
-                        {headEpicNo === m.epicNo ? "Head of family" : "Set as head"}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                  <Text className="w-24 text-slate-700">{m.epicNo}</Text>
-                  <Text className="w-28 text-slate-700">{m.relationName || "-"}</Text>
-                  <Text className="w-24 text-slate-700">{m.phone || "-"}</Text>
-                  <Text className="w-24 text-slate-700">{m.houseNo || "-"}</Text>
-                  <TouchableOpacity className="w-20" onPress={() => removeMember(m.epicNo)}>
-                    <Text className="text-red-600 font-semibold">Remove</Text>
-                  </TouchableOpacity>
+            <ScrollView horizontal showsHorizontalScrollIndicator className="mt-3 border border-slate-200 rounded-2xl">
+              <View style={{ minWidth: 720 }}>
+                <View className="bg-slate-100 flex-row px-3 py-2">
+                  <Text className="font-bold text-slate-700" style={{ width: 140 }} numberOfLines={1}>Name</Text>
+                  <Text className="font-bold text-slate-700" style={{ width: 110 }} numberOfLines={1}>EPIC</Text>
+                  <Text className="font-bold text-slate-700" style={{ width: 120 }} numberOfLines={1}>Relation</Text>
+                  <Text className="font-bold text-slate-700" style={{ width: 90 }} numberOfLines={1}>Phone</Text>
+                  <Text className="font-bold text-slate-700" style={{ width: 110 }} numberOfLines={1}>House No</Text>
+                  <Text className="font-bold text-slate-700" style={{ width: 100 }} numberOfLines={1}>Actions</Text>
                 </View>
-              ))}
-              {members.length === 0 ? <Text className="px-3 py-5 text-slate-400">No members added.</Text> : null}
-            </View>
+                {members.map((m, memberIndex) => (
+                  <View key={`${String(m?.epicNo || m?.memberId || m?.voterName || "member")}-${memberIndex}`} className="flex-row items-center px-3 py-2 border-t border-slate-100">
+                    <View style={{ width: 140 }}>
+                      <TouchableOpacity onPress={() => openVoterInfo(m)}>
+                        <Text className="text-blue-700 font-semibold" numberOfLines={1}>{m.voterName}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setHeadEpicNo(m.epicNo)}>
+                        <Text className={`text-xs mt-1 ${headEpicNo === m.epicNo ? "text-blue-600 font-bold" : "text-slate-500"}`} numberOfLines={1}>
+                          {headEpicNo === m.epicNo ? "Head of family" : "Set as head"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity style={{ width: 110 }} onPress={() => openVoterInfo(m)}>
+                      <Text className="text-blue-700" numberOfLines={1}>{m.epicNo}</Text>
+                    </TouchableOpacity>
+                    <Text className="text-slate-700" style={{ width: 120 }} numberOfLines={2}>{m.relationName || "-"}</Text>
+                    <Text className="text-slate-700" style={{ width: 90 }} numberOfLines={1}>{m.phone || "-"}</Text>
+                    <Text className="text-slate-700" style={{ width: 110 }} numberOfLines={2}>{m.houseNo || "-"}</Text>
+                    <View style={{ width: 100 }}>
+                      <TouchableOpacity onPress={() => openVoterInfo(m)}>
+                        <Text className="text-blue-600 font-semibold text-xs">View</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => removeMember(m.epicNo)}>
+                        <Text className="text-red-600 font-semibold text-xs mt-1">Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+                {members.length === 0 ? <Text className="px-3 py-5 text-slate-400">No members added.</Text> : null}
+              </View>
+            </ScrollView>
 
             <View className="mt-5">
               <View className="flex-row gap-3">
@@ -380,8 +609,10 @@ export default function VotersFamilyScreen() {
                     setOpen={setOpenEconomic}
                     setValue={setEconomicStatus}
                     setItems={setEconomicItems}
-                    style={{ borderColor: "#CBD5E1", minHeight: 48 }}
-                    dropDownContainerStyle={{ borderColor: "#CBD5E1" }}
+                    style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 48 }}
+                    dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+                    textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
+                    placeholderStyle={{ color: '#94A3B8' }}
                   />
                 </View>
                 <View className="flex-1 z-30">
@@ -392,10 +623,12 @@ export default function VotersFamilyScreen() {
                     items={members.map((m) => ({ label: `${m.voterName} (${m.epicNo})`, value: m.epicNo }))}
                     setOpen={setOpenHead}
                     setValue={setHeadEpicNo}
-                    setItems={() => {}}
+                    setItems={() => { }}
                     placeholder="Pick head of family"
-                    style={{ borderColor: "#CBD5E1", minHeight: 48 }}
-                    dropDownContainerStyle={{ borderColor: "#CBD5E1" }}
+                    style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 48 }}
+                    dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+                    textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
+                    placeholderStyle={{ color: '#94A3B8' }}
                   />
                 </View>
               </View>
@@ -420,8 +653,10 @@ export default function VotersFamilyScreen() {
                     setOpen={setOpenNature}
                     setValue={setFamilyNature}
                     setItems={setNatureItems}
-                    style={{ borderColor: "#CBD5E1", minHeight: 48 }}
-                    dropDownContainerStyle={{ borderColor: "#CBD5E1" }}
+                    style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 48 }}
+                    dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+                    textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
+                    placeholderStyle={{ color: '#94A3B8' }}
                   />
                 </View>
               </View>
@@ -434,8 +669,10 @@ export default function VotersFamilyScreen() {
                   setOpen={setOpenPoints}
                   setValue={setFamilyPoints}
                   setItems={setPointItems}
-                  style={{ borderColor: "#CBD5E1", minHeight: 48 }}
-                  dropDownContainerStyle={{ borderColor: "#CBD5E1" }}
+                  style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 48 }}
+                  dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+                  textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
+                  placeholderStyle={{ color: '#94A3B8' }}
                 />
               </View>
               <TouchableOpacity className="mt-4 bg-green-600 rounded-lg py-3" onPress={() => setShowBuildingTag((v) => !v)}>
@@ -447,11 +684,7 @@ export default function VotersFamilyScreen() {
               <View className="mt-4">
                 <View className="flex-row gap-3">
                   <View className="flex-1">
-                    <Text className="text-slate-700 font-semibold mb-2">Building/ Apartment Name</Text>
-                    <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" placeholder="Name" value={buildingName} onChangeText={setBuildingName} />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-slate-700 font-semibold mb-2">Address</Text>
+                    <Text className="text-slate-700 font-semibold mb-2">Association / Building Address</Text>
                     <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" placeholder="Building Address" value={buildingAddress} onChangeText={setBuildingAddress} />
                   </View>
                 </View>
@@ -493,6 +726,11 @@ export default function VotersFamilyScreen() {
           </>
         ) : (
           <>
+            {isSuperAdmin ? (
+              <TouchableOpacity className="bg-slate-700 rounded-xl py-3 mb-3" onPress={downloadFamiliesExcel} disabled={!families.length || familiesLoading}>
+                <Text className="text-center text-white font-bold">Download Excel (All Families)</Text>
+              </TouchableOpacity>
+            ) : null}
             <TextInput
               className="border border-slate-300 bg-white rounded-xl px-4 py-3 mb-3"
               placeholder="Search family or address..."
@@ -513,7 +751,16 @@ export default function VotersFamilyScreen() {
                       <Text className="font-bold text-slate-800 text-base">{item.familyName}</Text>
                       <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
                     </View>
-                    <Text className="text-slate-500 mt-2">{item.familyAddress || "-"}</Text>
+                    <Text className="text-slate-500 mt-1">Road: {item.roadName || "-"} | Family No: {item.familyNumber || "-"} | Flat: {item.flatNumber || "-"}</Text>
+                    <Text className="text-slate-500 mt-1">{item.familyAddress || "-"}</Text>
+                    {(item.members || []).slice(0, 5).map((m: any, mi: number) => (
+                      <Text key={`${item.familyId}-m-${mi}`} className="text-slate-600 text-xs mt-1">
+                        {mi + 1}. {m.voterName} | {m.relationName || "-"} | {m.epicNo}
+                      </Text>
+                    ))}
+                    {(item.members || []).length > 5 ? (
+                      <Text className="text-slate-400 text-xs mt-1">+{(item.members || []).length - 5} more members (tap for details)</Text>
+                    ) : null}
                   </TouchableOpacity>
                 ))}
               </View>

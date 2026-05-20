@@ -56,6 +56,16 @@ const LoginScreen = () => {
         }
 
         await AsyncStorage.setItem("userInfo", JSON.stringify(userData));
+        await AsyncStorage.setItem("token", userData.token);
+        await AsyncStorage.setItem("X_INIT_TOKEN", userData.token);
+        await AsyncStorage.setItem("role", userData.role || '');
+        await AsyncStorage.setItem("tenantId", userData.tenantId || '');
+        if (userData.assemblyCode || userData.assemblyNo || userData.assignmentId) {
+          await AsyncStorage.setItem(
+            "assemblyCode",
+            String(userData.assemblyCode || userData.assemblyNo || userData.assignmentId)
+          );
+        }
         setUserInfo(userData);
         setLoading(false);
       } else {

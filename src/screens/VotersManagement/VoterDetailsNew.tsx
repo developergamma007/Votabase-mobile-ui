@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState, useRef } from "react";
+import React, { useContext, useEffect, useState, useRef, useMemo } from "react";
 import {
     View,
     Text,
@@ -8,13 +8,13 @@ import {
     Alert,
     Linking,
     Platform,
-    Image,
     ActivityIndicator
 } from "react-native";
 
 import Ionicons from "react-native-vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { CRUDAPI } from "../../apis/Api";
+import { WebView } from "react-native-webview";
+import { CRUDAPI, getAssemblyCode, GOOGLE_MAPS_API_KEY } from "../../apis/Api";
 import { addLog, updateLogStatus } from "../../components/LogsHelpers";
 import { AuthContext } from "../../context/AuthContext";
 import { bgColors } from "../../constants/colors";
@@ -38,8 +38,14 @@ export default function VoterInfo({ navigation, route }) {
     const [pollDayEnabled, setPollDayEnabled] = useState(false);
     const [printTemplate, setPrintTemplate] = useState(null);
     const [saving, setSaving] = useState(false);
-    
+
     const presentAddressRef = useRef<TextInput>(null);
+
+    const mapHtml = useMemo(() => {
+        const lat = Number(location?.latitude || voter?.latitude || 12.9716);
+        const lng = Number(location?.longitude || voter?.longitude || 77.5946);
+        return `<!doctype html><html><head><meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" /><style>html,body,#map{margin:0;padding:0;width:100%;height:100%;}</style></head><body><div id="map"></div><script>function initMap(){var p={lat:${lat},lng:${lng}};var m=new google.maps.Map(document.getElementById('map'),{zoom:15,center:p,mapTypeControl:false,streetViewControl:false});new google.maps.Marker({position:p,map:m});}</script><script async defer src="https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap"></script></body></html>`;
+    }, [location?.latitude, location?.longitude, voter?.latitude, voter?.longitude]);
 
     const [form, setForm] = useState({
         mobile: voter?.mobile || "",
@@ -140,7 +146,7 @@ export default function VoterInfo({ navigation, route }) {
                 } catch (err) { console.error("Error parsing assembly data", err); }
             }
 
-            const code = await CRUDAPI.getAssemblyCode ? await CRUDAPI.getAssemblyCode() : (voter.assemblyCode || '000000000151');
+            const code = await getAssemblyCode().catch(() => voter.assemblyCode || '000000000151');
             CRUDAPI.fetchPollDayConfig(code).then(config => setPollDayEnabled(config?.enabled || false)).catch(() => {});
             CRUDAPI.fetchMessageTemplate(voter.wardCode || booth?.wardId, 'PRINT').then(res => setPrintTemplate(res?.data?.result || res?.result || res || {})).catch(() => {});
         };
@@ -296,9 +302,9 @@ export default function VoterInfo({ navigation, route }) {
                     mode="BADGE"
                     placeholder={`Select ${label}`}
                     listMode="SCROLLVIEW"
-                    style={{ backgroundColor: "#fff", borderColor: "#F3F4F6", borderRadius: 12, minHeight: 52 }}
-                    dropDownContainerStyle={{ borderColor: "#F3F4F6", elevation: 5, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10 }}
-                    textStyle={{ color: "#1F2937", fontSize: 15 }}
+                    style={{ backgroundColor: "#ffffff", borderColor: "#F3F4F6", borderRadius: 12, minHeight: 52 }}
+                    dropDownContainerStyle={{ backgroundColor: "#ffffff", borderColor: "#F3F4F6", elevation: 5, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10 }}
+                    textStyle={{ color: "#1F2937", fontSize: 14, fontWeight: "600" }}
                     placeholderStyle={{ color: "#94A3B8" }}
                     badgeColors={["#3B82F6"]}
                     badgeTextStyle={{ color: "#fff" }}
@@ -353,28 +359,41 @@ export default function VoterInfo({ navigation, route }) {
 
                 {/* Map Section */}
                 <View style={{ marginBottom: 24 }}>
-                    <TouchableOpacity 
-                        activeOpacity={0.9}
-                        onPress={() => {
-                            if (location) {
+                    <View
+                        style={{
+                            height: 200,
+                            borderRadius: 24,
+                            overflow: "hidden",
+                            borderWidth: 1,
+                            borderColor: "#E2E8F0",
+                            backgroundColor: "#EFF6FF",
+                        }}
+                    >
+                        <WebView
+                            originWhitelist={["*"]}
+                            source={{ html: mapHtml }}
+                            style={{ flex: 1, backgroundColor: "transparent" }}
+                            scrollEnabled={false}
+                            nestedScrollEnabled
+                        />
+                    </View>
+                    {location ? (
+                        <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => {
                                 const url = Platform.select({
                                     ios: `maps:0,0?q=${location.latitude},${location.longitude}`,
-                                    android: `geo:0,0?q=${location.latitude},${location.longitude}`
+                                    android: `geo:0,0?q=${location.latitude},${location.longitude}`,
                                 });
                                 Linking.openURL(url || "");
-                            }
-                        }}
-                        style={{ height: 192, backgroundColor: "#EFF6FF", borderRadius: 24, overflow: "hidden", borderWidth: 1, borderColor: "#F3F4F6", alignItems: "center", justifyContent: "center", position: "relative" }}
-                    >
-                        <Image 
-                            source={{ uri: `https://maps.googleapis.com/maps/api/staticmap?center=${location?.latitude || 12.9716},${location?.longitude || 77.5946}&zoom=15&size=600x300&markers=color:red%7C${location?.latitude || 12.9716},${location?.longitude || 77.5946}&key=MAP_PLACEHOLDER` }} 
-                            style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, opacity: 1 }}
-                        />
-                        <View style={{ alignItems: "center", backgroundColor: 'rgba(255,255,255,0.7)', padding: 8, borderRadius: 12 }}>
-                            <Ionicons name="location" size={32} color="#EF4444" />
-                            <Text style={{ fontSize: 10, color: "#2563EB", fontWeight: "bold", marginTop: 2 }}>TAP TO VIEW MAP</Text>
-                        </View>
-                    </TouchableOpacity>
+                            }}
+                            style={{ marginTop: 10, alignSelf: "flex-end" }}
+                        >
+                            <Text style={{ fontSize: 12, color: "#2563EB", fontWeight: "700" }}>
+                                Open in Maps
+                            </Text>
+                        </TouchableOpacity>
+                    ) : null}
                     <TouchableOpacity
                         onPress={fetchLocation}
                         style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#2563EB", paddingVertical: 16, borderRadius: 16, marginTop: 16, shadowColor: "#3B82F6", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4 }}

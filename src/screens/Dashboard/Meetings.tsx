@@ -78,7 +78,7 @@ export default function Meetings() {
         const options = Array.isArray(payload)
           ? payload.map((a: any) => ({
               label: a?.name || a?.label || a?.assemblyName || String(a?.code || a?.assemblyCode || ''),
-              value: String(a?.code || a?.assemblyCode || a?.id || code),
+              value: a?.code || a?.assemblyCode || String(a?.id || code),
             }))
           : [];
         setAssemblyItems(options.length ? options : [{ label: String(code), value: String(code) }]);
@@ -247,9 +247,10 @@ export default function Meetings() {
             setOpen={setOpenAssembly}
             setValue={setAssemblyCode}
             setItems={setAssemblyItems}
-            style={{ borderColor: '#CBD5E1', minHeight: 46 }}
-            dropDownContainerStyle={{ borderColor: '#CBD5E1' }}
-            textStyle={{ fontSize: 16, fontWeight: '700', color: '#0f172a' }}
+            style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
+            dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+            textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
+            placeholderStyle={{ color: '#94A3B8' }}
           />
         </View>
 

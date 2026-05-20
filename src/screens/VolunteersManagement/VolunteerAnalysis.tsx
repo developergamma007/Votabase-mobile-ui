@@ -1,10 +1,15 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Share, Linking } from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { WebView } from "react-native-webview";
 import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
+import { AuthContext } from "../../context/AuthContext";
+import { buildFamilyMapTooltipText } from "../../components/FamilyFormHelpers";
 
 export default function VolunteerAnalysis() {
+  const { userInfo } = useContext(AuthContext) as any;
+  const role = String(userInfo?.role || "").replace("ROLE_", "").toUpperCase();
+  const hideFamilyLabelsOnMap = ["WARD", "BOOTH", "USER"].includes(role);
   const [rows, setRows] = useState([]);
   const [fields, setFields] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -84,8 +89,13 @@ export default function VolunteerAnalysis() {
           epic: item.epic || item.epicNo || "",
           mobile: item.mobile || item.phone || "",
           gender: item.gender || item.sex || "",
+          familyName: item.familyName || item.name || "",
+          roadName: item.roadName || "",
+          familyNumber: item.familyNumber || "",
+          flatNumber: item.flatNumber || "",
           familyAddress: item.familyAddress || item.addressEn || item.address || "",
           headOfFamily: item.headOfFamily || item.headName || "",
+          members: item.members || [],
           membersCount: item.membersCount ?? item.members?.length ?? item.memberCount ?? "-",
         }))
         .filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
@@ -504,7 +514,9 @@ export default function VolunteerAnalysis() {
               </View>
             </View>
             <Text className="text-xs font-semibold text-slate-600 mb-3">
-              {mapDataMode === "families" ? "Family Location" : "User Location"}
+              {mapDataMode === "families"
+                ? (hideFamilyLabelsOnMap ? "Family map (tap marker for details)" : "Family Location")
+                : "User Location"}
             </Text>
             {mapError ? <Text className="text-red-600 text-center mb-3">{mapError}</Text> : null}
             {mapLoading ? <ActivityIndicator size="large" color="#2563eb" /> : null}
@@ -516,26 +528,27 @@ export default function VolunteerAnalysis() {
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
                   {mapPoints.map((item, idx) => (
                     <TouchableOpacity
-                      key={`${String(item?.epic || item?.name || item?.latitude || "map-point")}-${idx}`}
+                      key={`${String(item?.epic || item?.familyNumber || item?.latitude || "map-point")}-${idx}`}
                       onPress={() => setSelectedMapItem(item)}
                       className={`mr-2 px-3 py-2 rounded-lg border ${selectedMapItem === item ? "border-blue-600 bg-blue-50" : "border-gray-200 bg-white"}`}
                     >
-                      <Text className="text-xs font-semibold text-gray-800">{item.name || "Location"}</Text>
+                      <Text className="text-xs font-semibold text-gray-800">
+                        {mapDataMode === "families" && hideFamilyLabelsOnMap
+                          ? `Family #${idx + 1}`
+                          : (item.name || "Location")}
+                      </Text>
                       <Text className="text-[10px] text-gray-500">{item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
                 {selectedMapItem ? (
                   <View className="border border-gray-200 rounded-2xl p-4 bg-gray-50">
-                    <Text className="font-bold text-gray-800 mb-2">{selectedMapItem.name || "-"}</Text>
                     {mapDataMode === "families" ? (
-                      <>
-                        <Text className="text-xs text-gray-700 mb-1">Address: {selectedMapItem.familyAddress || "-"}</Text>
-                        <Text className="text-xs text-gray-700 mb-1">Head: {selectedMapItem.headOfFamily || "-"}</Text>
-                        <Text className="text-xs text-gray-700 mb-1">Phone: {selectedMapItem.mobile || "-"}</Text>
-                        <Text className="text-xs text-gray-700 mb-3">Members: {selectedMapItem.membersCount}</Text>
-                      </>
+                      <Text className="text-xs text-gray-800 mb-3 whitespace-pre-line">{buildFamilyMapTooltipText(selectedMapItem)}</Text>
                     ) : (
+                      <Text className="font-bold text-gray-800 mb-2">{selectedMapItem.name || "-"}</Text>
+                    )}
+                    {mapDataMode === "families" ? null : (
                       <>
                         <Text className="text-xs text-gray-700 mb-1">Relation: {selectedMapItem.relationName || "-"}</Text>
                         <Text className="text-xs text-gray-700 mb-1">EPIC: {selectedMapItem.epic || "-"}</Text>

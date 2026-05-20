@@ -178,7 +178,7 @@ export default function Promotions() {
 
           <View className="z-30 mb-3">
             <Text className="text-slate-600 mb-1 font-semibold text-[12px]">Select Assembly</Text>
-            <DropDownPicker open={openAssembly} value={assemblyId} items={assemblyItems} setOpen={setOpenAssembly} setValue={setAssemblyId} setItems={setAssemblyItems} style={{ borderColor: '#CBD5E1', minHeight: 46 }} dropDownContainerStyle={{ borderColor: '#CBD5E1' }} />
+            <DropDownPicker open={openAssembly} value={assemblyId} items={assemblyItems} setOpen={setOpenAssembly} setValue={setAssemblyId} setItems={setAssemblyItems} style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }} dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }} textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }} placeholderStyle={{ color: '#94A3B8' }} />
           </View>
           <View className="z-20 mb-3">
             <Text className="text-slate-600 mb-1 font-semibold text-[12px]">Select Ward</Text>
@@ -186,11 +186,11 @@ export default function Promotions() {
               const val = typeof cb === 'function' ? cb(selectedWard?.value || null) : cb;
               const ward = wards.find((w: any) => w.value === val) || null;
               setSelectedWard(ward);
-            }} setItems={setWardItems} placeholder="Select Ward" style={{ borderColor: '#CBD5E1', minHeight: 46 }} dropDownContainerStyle={{ borderColor: '#CBD5E1' }} />
+            }} setItems={setWardItems} placeholder="Select Ward" style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }} dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }} textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }} placeholderStyle={{ color: '#94A3B8' }} />
           </View>
           <View className="z-10 mb-4">
             <Text className="text-slate-600 mb-1 font-semibold text-[12px]">Channel</Text>
-            <DropDownPicker open={openChannel} value={channel} items={channelItems} setOpen={setOpenChannel} setValue={setChannel} setItems={setChannelItems} style={{ borderColor: '#CBD5E1', minHeight: 46 }} dropDownContainerStyle={{ borderColor: '#CBD5E1' }} />
+            <DropDownPicker open={openChannel} value={channel} items={channelItems} setOpen={setOpenChannel} setValue={setChannel} setItems={setChannelItems} style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }} dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }} textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }} placeholderStyle={{ color: '#94A3B8' }} />
           </View>
 
           {isAdmin && !selectedWard ? (
