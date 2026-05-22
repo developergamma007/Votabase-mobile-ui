@@ -16,13 +16,71 @@ export const parseFamilyNumber = (value) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
-export const getNextFamilyNumber = (families = []) => {
+export const parseWardCodeFromWardRecord = (ward = {}) => {
+  const name = String(
+    ward?.wardNameEn ?? ward?.ward_name_en ?? ward?.ward_name ?? ward?.name_en ?? ward?.name ?? ward?.label ?? ''
+  ).trim();
+  const nameMatch = name.match(/^(\d+)\s*[-–]/);
+  if (nameMatch) return nameMatch[1];
+  const code = String(ward?.wardCode ?? ward?.ward_code ?? ward?.ward_no ?? ward?.code ?? '').trim();
+  const id = String(ward?.wardId ?? ward?.ward_id ?? ward?.id ?? ward?.value ?? '').trim();
+  if (code && (!id || code !== id)) return code.replace(/\s+/g, '');
+  return '';
+};
+
+export const normalizeAssemblyCodeForFamily = (assemblyCode) => {
+  const raw = String(assemblyCode ?? '').trim();
+  if (!raw) return '';
+  if (/^\d+$/.test(raw)) {
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? String(n) : raw;
+  }
+  return raw.replace(/\s+/g, '');
+};
+
+export const getFamilyNumberPrefix = (ward = {}, assemblyCode = '') => {
+  const wardPart = parseWardCodeFromWardRecord(ward);
+  const asmPart = normalizeAssemblyCodeForFamily(assemblyCode);
+  if (asmPart && wardPart) return `${asmPart}-${wardPart}`;
+  return wardPart || asmPart || '';
+};
+
+export const getWardFamilyNumberPrefix = (ward = {}) => parseWardCodeFromWardRecord(ward);
+
+export const parseFamilyNumberSeq = (value, wardPrefix = "") => {
+  const raw = String(value ?? "").trim();
+  const prefix = String(wardPrefix ?? "").trim();
+  if (!prefix) return parseFamilyNumber(raw);
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = raw.match(new RegExp(`^${escaped}-(\\d+)$`, "i"));
+  if (!match) return null;
+  const n = parseInt(match[1], 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+export const familyBelongsToWard = (family, wardId, wardCode) => {
+  if (!wardId && !wardCode) return true;
+  if (wardId != null && String(wardId).trim() !== "" && String(family?.wardId) === String(wardId)) return true;
+  if (wardCode && String(family?.wardCode ?? "").trim() === String(wardCode).trim()) return true;
+  return false;
+};
+
+export const getNextFamilyNumber = (families = [], wardPrefix = "") => {
+  const prefix = String(wardPrefix ?? "").trim();
+  if (!prefix) {
+    let max = 0;
+    (families || []).forEach((family) => {
+      const n = parseFamilyNumber(family?.familyNumber);
+      if (n != null && n > max) max = n;
+    });
+    return String(max + 1);
+  }
   let max = 0;
   (families || []).forEach((family) => {
-    const n = parseFamilyNumber(family?.familyNumber);
+    const n = parseFamilyNumberSeq(family?.familyNumber, prefix);
     if (n != null && n > max) max = n;
   });
-  return max + 1;
+  return `${prefix}-${max + 1}`;
 };
 
 export const hasHouseMarkingFields = (buildingNumber, buildingName, flatNumber) =>
@@ -90,14 +148,26 @@ export const buildFamilyMapTooltipText = (point = {}) => {
   ].join('\n');
 };
 
+const familyNumberSortKey = (family) => {
+  const raw = String(family?.familyNumber ?? "").trim();
+  const dash = raw.lastIndexOf("-");
+  if (dash > 0) {
+    const prefix = raw.slice(0, dash);
+    const seq = parseInt(raw.slice(dash + 1), 10);
+    return { prefix, seq: Number.isFinite(seq) ? seq : Number.MAX_SAFE_INTEGER, raw };
+  }
+  const n = parseFamilyNumber(raw);
+  return { prefix: "", seq: n != null ? n : Number.MAX_SAFE_INTEGER, raw };
+};
+
 export const sortFamiliesByNumber = (families = []) =>
   [...families].sort((a, b) => {
-    const aNum = parseFamilyNumber(a?.familyNumber);
-    const bNum = parseFamilyNumber(b?.familyNumber);
-    if (aNum != null && bNum != null && aNum !== bNum) return aNum - bNum;
-    if (aNum != null && bNum == null) return -1;
-    if (aNum == null && bNum != null) return 1;
-    return String(a?.familyName || '').localeCompare(String(b?.familyName || ''), 'en', { sensitivity: 'base' });
+    const ak = familyNumberSortKey(a);
+    const bk = familyNumberSortKey(b);
+    const prefixCmp = ak.prefix.localeCompare(bk.prefix, "en", { sensitivity: "base" });
+    if (prefixCmp !== 0) return prefixCmp;
+    if (ak.seq !== bk.seq) return ak.seq - bk.seq;
+    return String(a?.familyName || "").localeCompare(String(b?.familyName || ""), "en", { sensitivity: "base" });
   });
 
 /** @deprecated Use sortFamiliesByNumber */

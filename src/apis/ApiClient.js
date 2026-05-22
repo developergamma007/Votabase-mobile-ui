@@ -2,7 +2,8 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-const PROD_BASE_URL = 'http://13.233.40.235';
+// Production nginx redirects HTTP → HTTPS; release builds must use HTTPS or axios fails with "Network Error".
+const PROD_BASE_URL = 'https://13.233.40.235';
 const DEV_HOST = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 const DEV_BASE_URL = `http://${DEV_HOST}:8000`;
 const BASE_URL = __DEV__ ? DEV_BASE_URL : PROD_BASE_URL;

@@ -11,6 +11,9 @@ import {
   FAMILY_AVAILABILITY_OPTIONS,
   FAMILY_POINT_OPTIONS,
   getNextFamilyNumber,
+  getFamilyNumberPrefix,
+  parseWardCodeFromWardRecord,
+  familyBelongsToWard,
   hasHouseMarkingFields,
   normalizeVoterForInfo,
   sortFamiliesByNumber,
@@ -31,7 +34,6 @@ export default function VotersFamilyScreen() {
   const [activeTab, setActiveTab] = useState<"NEW" | "LIST">("NEW");
 
   const [familyName, setFamilyName] = useState("");
-  const [familyAddress, setFamilyAddress] = useState("");
   const [roadName, setRoadName] = useState("");
   const [buildingNumber, setBuildingNumber] = useState("");
   const [buildingName, setBuildingName] = useState("");
@@ -51,7 +53,6 @@ export default function VotersFamilyScreen() {
   const [economicStatus, setEconomicStatus] = useState("NA");
   const [familyNature, setFamilyNature] = useState("NA");
   const [familyPoints, setFamilyPoints] = useState("5");
-  const [showBuildingTag, setShowBuildingTag] = useState(false);
   const [buildingAddress, setBuildingAddress] = useState("");
   const [hasAssociation, setHasAssociation] = useState(false);
   const [associationName, setAssociationName] = useState("");
@@ -70,6 +71,40 @@ export default function VotersFamilyScreen() {
   const [openNature, setOpenNature] = useState(false);
   const [openPoints, setOpenPoints] = useState(false);
   const [openAvailability, setOpenAvailability] = useState(false);
+  const [wardItems, setWardItems] = useState<{ label: string; value: string; wardCode: string }[]>([]);
+  const [selectedWardId, setSelectedWardId] = useState("");
+  const [openWard, setOpenWard] = useState(false);
+
+  const accessWardIds = useMemo(() => {
+    const ids: string[] = [];
+    if (Array.isArray(userInfo?.wardIds)) ids.push(...userInfo.wardIds.map(String));
+    if (Array.isArray(userInfo?.wards)) ids.push(...userInfo.wards.map(String));
+    if (userInfo?.wardId) ids.push(String(userInfo.wardId));
+    if (userInfo?.ward_id) ids.push(String(userInfo.ward_id));
+    if (String(userInfo?.assignmentType || "").toUpperCase() === "WARD" && userInfo?.assignmentId) {
+      String(userInfo.assignmentId)
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean)
+        .forEach((v) => ids.push(v));
+    }
+    return Array.from(new Set(ids.filter(Boolean)));
+  }, [userInfo]);
+
+  const selectedWard = useMemo(
+    () => wardItems.find((w) => String(w.value) === String(selectedWardId)) || wardItems[0] || null,
+    [wardItems, selectedWardId]
+  );
+
+  const wardNumberPrefix = useMemo(
+    () => getFamilyNumberPrefix(selectedWard, assemblyCode),
+    [selectedWard, assemblyCode]
+  );
+
+  const wardFamilies = useMemo(
+    () => families.filter((f) => familyBelongsToWard(f, selectedWard?.value, selectedWard?.wardCode)),
+    [families, selectedWard]
+  );
 
   const [economicItems, setEconomicItems] = useState([
     { label: "NA", value: "NA" },
@@ -103,12 +138,12 @@ export default function VotersFamilyScreen() {
   };
 
   useEffect(() => {
-    if (hasHouseMarkingFields(buildingNumber, buildingName, flatNumber)) {
-      setFamilyNumber(String(getNextFamilyNumber(families)));
+    if (hasHouseMarkingFields(buildingNumber, buildingName, flatNumber) && wardNumberPrefix) {
+      setFamilyNumber(getNextFamilyNumber(wardFamilies, wardNumberPrefix));
     } else {
       setFamilyNumber("");
     }
-  }, [buildingNumber, buildingName, flatNumber, families]);
+  }, [buildingNumber, buildingName, flatNumber, wardFamilies, wardNumberPrefix]);
 
   useEffect(() => {
     const loadContext = async () => {
@@ -129,14 +164,41 @@ export default function VotersFamilyScreen() {
       }
       await loadFamilySuggestions();
       try {
-        const all = await CRUDAPI.fetchAllFamilies("", undefined);
-        setFamilies(sortFamiliesByNumber(all));
+        const wardsRes = await CRUDAPI.fetchWards(code);
+        const wardsPayload = wardsRes?.data?.result || wardsRes?.result || wardsRes?.data || [];
+        const wardList = (Array.isArray(wardsPayload) ? wardsPayload : []).map((ward: any, index: number) => {
+          const id = ward?.wardId ?? ward?.ward_id ?? ward?.id ?? index + 1;
+          const name = ward?.wardNameEn ?? ward?.ward_name_en ?? ward?.name_en ?? ward?.name ?? "";
+          const wardCode = parseWardCodeFromWardRecord({ ...ward, label: name });
+          return {
+            label: name || `Ward ${wardCode || id}`,
+            value: String(id),
+            wardCode,
+          };
+        });
+        const filtered = accessWardIds.length
+          ? wardList.filter((w) => accessWardIds.includes(w.value))
+          : wardList;
+        setWardItems(filtered);
+        const defaultWardId = filtered[0]?.value || "";
+        if (defaultWardId) {
+          setSelectedWardId(defaultWardId);
+          const all = await CRUDAPI.fetchAllFamilies("", undefined, defaultWardId);
+          setFamilies(sortFamiliesByNumber(all));
+        }
       } catch {
-        // keep empty; next family number defaults to 1
+        setWardItems([]);
       }
     };
     loadContext();
   }, []);
+
+  useEffect(() => {
+    if (!selectedWardId) return;
+    CRUDAPI.fetchAllFamilies("", undefined, selectedWardId)
+      .then((all) => setFamilies(sortFamiliesByNumber(all)))
+      .catch(() => setFamilies([]));
+  }, [selectedWardId]);
 
   useEffect(() => {
     const t = setTimeout(async () => {
@@ -159,7 +221,8 @@ export default function VotersFamilyScreen() {
   const loadFamilies = async () => {
     setFamiliesLoading(true);
     try {
-      const all = await CRUDAPI.fetchAllFamilies("", undefined);
+      const wardId = selectedWardId || wardItems[0]?.value;
+      const all = await CRUDAPI.fetchAllFamilies("", undefined, wardId);
       setFamilies(sortFamiliesByNumber(all));
     } catch {
       setFamilies([]);
@@ -170,7 +233,6 @@ export default function VotersFamilyScreen() {
 
   const resetNewFamilyForm = () => {
     setFamilyName("");
-    setFamilyAddress("");
     setRoadName("");
     setBuildingNumber("");
     setBuildingName("");
@@ -184,7 +246,6 @@ export default function VotersFamilyScreen() {
     setEconomicStatus("NA");
     setFamilyNature("NA");
     setFamilyPoints("5");
-    setShowBuildingTag(false);
     setBuildingAddress("");
     setHasAssociation(false);
     setAssociationName("");
@@ -202,8 +263,8 @@ export default function VotersFamilyScreen() {
   const downloadFamiliesExcel = async () => {
     if (!families.length) return;
     const headers = [
-      "Family Name", "Road Name", "Family Number", "Flat No", "Building Number", "Building Name",
-      "Head of Family", "Head EPIC", "Members", "Availability", "Points", "Tag Leader", "Address", "Member Details",
+      "Family Name", "Road Name", "Family Number", "Flat No", "Building/Apartment Number", "Building/Apartment Name",
+      "Head of Family", "Head EPIC", "Members", "Availability", "Points", "Tag Leader", "Member Details",
     ];
     const rows = families.map((f: any) => {
       const memberText = (f.members || [])
@@ -212,7 +273,7 @@ export default function VotersFamilyScreen() {
       return [
         f.familyName, f.roadName, f.familyNumber, f.flatNumber, f.buildingNumber, f.buildingName,
         f.headName, f.headEpicNo, f.memberCount ?? f.members?.length, f.familyAvailability,
-        f.points, f.tagLeader, f.familyAddress, memberText,
+        f.points, f.tagLeader, memberText,
       ].map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",");
     });
     const csv = [headers.join(","), ...rows].join("\n");
@@ -228,7 +289,8 @@ export default function VotersFamilyScreen() {
     if (!q) return families;
     return families.filter((f: any) =>
       String(f?.familyName || "").toLowerCase().includes(q) ||
-      String(f?.familyAddress || "").toLowerCase().includes(q)
+      String(f?.roadName || "").toLowerCase().includes(q) ||
+      String(f?.familyNumber || "").toLowerCase().includes(q)
     );
   }, [families, familySearch]);
 
@@ -285,20 +347,20 @@ export default function VotersFamilyScreen() {
     try {
       if (!familyName.trim()) throw new Error("Family name is required");
       if (!roadName.trim()) throw new Error("Road name is required");
-      if (!familyAddress.trim()) throw new Error("Family Address is required");
+      if (!selectedWardId && wardItems.length > 1) throw new Error("Please select a ward.");
       if (members.length === 0) throw new Error("Add at least one member");
       if (!headEpicNo) throw new Error("Pick head of family");
       const boothId = members.find((m) => m.boothId)?.boothId;
       if (!boothId) throw new Error("Member booth info missing");
 
       if (!hasHouseMarkingFields(buildingNumber, buildingName, flatNumber)) {
-        throw new Error("Building Number, Building Name, and Flat Number are required");
+        throw new Error("Building/Apartment Number, Building/Apartment Name, and Flat Number are required");
       }
-      const generatedFamilyNumber = String(getNextFamilyNumber(families));
+      if (!wardNumberPrefix) throw new Error("Ward is required to generate a family number.");
+      const generatedFamilyNumber = getNextFamilyNumber(wardFamilies, wardNumberPrefix);
 
       await CRUDAPI.createFamily({
         familyName,
-        familyAddress,
         roadName: roadName.trim(),
         buildingNumber: buildingNumber.trim() || null,
         buildingName: buildingName.trim() || null,
@@ -314,18 +376,18 @@ export default function VotersFamilyScreen() {
         pointsProvided: 0,
         economicStatus,
         familyNature,
-        buildingAddress: showBuildingTag ? buildingAddress : null,
-        hasAssociation: showBuildingTag ? hasAssociation : false,
-        associationName: showBuildingTag && hasAssociation ? associationName : null,
-        associationHeadName: showBuildingTag && hasAssociation ? associationHeadName : null,
-        associationHeadPhone: showBuildingTag && hasAssociation ? associationHeadPhone : null,
+        buildingAddress: buildingAddress.trim() || null,
+        hasAssociation,
+        associationName: hasAssociation ? associationName.trim() || null : null,
+        associationHeadName: hasAssociation ? associationHeadName.trim() || null : null,
+        associationHeadPhone: hasAssociation ? associationHeadPhone.trim() || null : null,
         latitude: location?.latitude || 0,
         longitude: location?.longitude || 0,
       });
 
       setSuccess("Family saved successfully.");
       await loadFamilySuggestions();
-      const all = await CRUDAPI.fetchAllFamilies("", undefined);
+      const all = await CRUDAPI.fetchAllFamilies("", undefined, selectedWardId);
       setFamilies(sortFamiliesByNumber(all));
       resetNewFamilyForm();
     } catch (e: any) {
@@ -396,15 +458,33 @@ export default function VotersFamilyScreen() {
 
         {activeTab === "NEW" ? (
           <>
-            <View className="flex-row gap-3">
-              <View className="flex-1">
-                <Text className="text-slate-600 mb-2 font-semibold">Enter family name</Text>
-                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={familyName} onChangeText={setFamilyName} placeholder="Family name" />
-              </View>
-              <View className="flex-1">
-                <Text className="text-slate-600 mb-2 font-semibold">Family Address</Text>
-                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={familyAddress} onChangeText={setFamilyAddress} placeholder="Family Address" />
-              </View>
+            <View className="mb-4 z-40">
+              <Text className="text-slate-600 mb-2 font-semibold">Ward</Text>
+              {wardItems.length > 1 ? (
+                <DropDownPicker
+                  open={openWard}
+                  value={selectedWardId}
+                  items={wardItems}
+                  setOpen={setOpenWard}
+                  setValue={setSelectedWardId}
+                  setItems={setWardItems}
+                  style={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12, minHeight: 46 }}
+                  dropDownContainerStyle={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12 }}
+                  textStyle={{ fontSize: 14, color: "#1E293B", fontWeight: "600" }}
+                  placeholderStyle={{ color: "#94A3B8" }}
+                />
+              ) : (
+                <TextInput
+                  className="border border-slate-200 bg-slate-100 rounded-xl px-4 py-3 text-slate-700"
+                  value={selectedWard?.label || "Ward"}
+                  editable={false}
+                />
+              )}
+            </View>
+
+            <View className="mb-4">
+              <Text className="text-slate-600 mb-2 font-semibold">Enter family name</Text>
+              <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={familyName} onChangeText={setFamilyName} placeholder="Family name" />
             </View>
 
             <View className="mt-4">
@@ -451,14 +531,51 @@ export default function VotersFamilyScreen() {
               ) : null}
             </View>
 
+            <View className="mt-4">
+              <Text className="text-slate-600 mb-2 font-semibold">Building/Apartment Address</Text>
+              <View className="flex-row items-center gap-3">
+                <TextInput
+                  className="flex-1 border border-slate-300 bg-white rounded-xl px-4 py-3"
+                  placeholder="Building/Apartment Address"
+                  value={buildingAddress}
+                  onChangeText={setBuildingAddress}
+                />
+                <TouchableOpacity className="flex-row items-center shrink-0" onPress={() => setHasAssociation((v) => !v)}>
+                  <View className={`w-7 h-7 rounded mr-2 items-center justify-center ${hasAssociation ? "bg-blue-600" : "bg-slate-200"}`}>
+                    {hasAssociation ? <Ionicons name="checkmark" size={18} color="#fff" /> : null}
+                  </View>
+                  <Text className="text-slate-800 text-[14px] font-semibold">If have association</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {hasAssociation ? (
+              <View className="mt-4">
+                <View className="flex-row gap-3 flex-wrap">
+                  <View className="flex-1 min-w-[45%]">
+                    <Text className="text-slate-700 font-semibold mb-2">Association Name</Text>
+                    <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" placeholder="Association Name" value={associationName} onChangeText={setAssociationName} />
+                  </View>
+                  <View className="flex-1 min-w-[45%]">
+                    <Text className="text-slate-700 font-semibold mb-2">Association Head Name</Text>
+                    <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" placeholder="Association Head Name" value={associationHeadName} onChangeText={setAssociationHeadName} />
+                  </View>
+                </View>
+                <View className="mt-3">
+                  <Text className="text-slate-700 font-semibold mb-2">Association Head Phone number (10 digits)</Text>
+                  <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" placeholder="Phone number" value={associationHeadPhone} onChangeText={setAssociationHeadPhone} keyboardType="number-pad" maxLength={10} />
+                </View>
+              </View>
+            ) : null}
+
             <View className="flex-row gap-3 mt-4 flex-wrap">
               <View className="flex-1 min-w-[45%]">
-                <Text className="text-slate-600 mb-2 font-semibold">Building Number</Text>
-                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={buildingNumber} onChangeText={setBuildingNumber} placeholder="Building Number" />
+                <Text className="text-slate-600 mb-2 font-semibold">Building/Apartment Number</Text>
+                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={buildingNumber} onChangeText={setBuildingNumber} placeholder="Building/Apartment Number" />
               </View>
               <View className="flex-1 min-w-[45%]">
-                <Text className="text-slate-600 mb-2 font-semibold">Building Name</Text>
-                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={buildingName} onChangeText={setBuildingName} placeholder="Building Name" />
+                <Text className="text-slate-600 mb-2 font-semibold">Building/Apartment Name</Text>
+                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={buildingName} onChangeText={setBuildingName} placeholder="Building/Apartment Name" />
               </View>
               <View className="flex-1 min-w-[45%]">
                 <Text className="text-slate-600 mb-2 font-semibold">Flat Number</Text>
@@ -466,7 +583,7 @@ export default function VotersFamilyScreen() {
               </View>
               <View className="flex-1 min-w-[45%]">
                 <Text className="text-slate-600 mb-2 font-semibold">Family Number</Text>
-                <TextInput className="border border-slate-200 bg-slate-100 rounded-xl px-4 py-3 text-slate-600" value={familyNumber} editable={false} placeholder="Auto (1, 2, 3…)" keyboardType="number-pad" />
+                <TextInput className="border border-slate-200 bg-slate-100 rounded-xl px-4 py-3 text-slate-600" value={familyNumber} editable={false} placeholder={wardNumberPrefix ? `${wardNumberPrefix}-1` : "Select ward"} keyboardType="default" />
               </View>
             </View>
 
@@ -675,47 +792,7 @@ export default function VotersFamilyScreen() {
                   placeholderStyle={{ color: '#94A3B8' }}
                 />
               </View>
-              <TouchableOpacity className="mt-4 bg-green-600 rounded-lg py-3" onPress={() => setShowBuildingTag((v) => !v)}>
-                <Text className="text-center text-white font-semibold">Tag Building/ Apartment</Text>
-              </TouchableOpacity>
             </View>
-
-            {showBuildingTag ? (
-              <View className="mt-4">
-                <View className="flex-row gap-3">
-                  <View className="flex-1">
-                    <Text className="text-slate-700 font-semibold mb-2">Association / Building Address</Text>
-                    <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" placeholder="Building Address" value={buildingAddress} onChangeText={setBuildingAddress} />
-                  </View>
-                </View>
-
-                <TouchableOpacity className="flex-row items-center mt-4" onPress={() => setHasAssociation((v) => !v)}>
-                  <View className={`w-7 h-7 rounded mr-3 items-center justify-center ${hasAssociation ? "bg-blue-600" : "bg-slate-200"}`}>
-                    {hasAssociation ? <Ionicons name="checkmark" size={18} color="#fff" /> : null}
-                  </View>
-                  <Text className="text-slate-800 text-[16px] font-semibold">If have association</Text>
-                </TouchableOpacity>
-
-                {hasAssociation ? (
-                  <View className="mt-4">
-                    <View className="flex-row gap-3">
-                      <View className="flex-1">
-                        <Text className="text-slate-700 font-semibold mb-2">Association Name</Text>
-                        <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" placeholder="Association Name" value={associationName} onChangeText={setAssociationName} />
-                      </View>
-                      <View className="flex-1">
-                        <Text className="text-slate-700 font-semibold mb-2">Association Head Name</Text>
-                        <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" placeholder="Association Head Name" value={associationHeadName} onChangeText={setAssociationHeadName} />
-                      </View>
-                    </View>
-                    <View className="mt-3">
-                      <Text className="text-slate-700 font-semibold mb-2">Association Head Phone number (10 digits)</Text>
-                      <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" placeholder="Phone number" value={associationHeadPhone} onChangeText={setAssociationHeadPhone} keyboardType="number-pad" maxLength={10} />
-                    </View>
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
 
             {error ? <Text className="text-red-600 mt-3">{error}</Text> : null}
             {success ? <Text className="text-green-700 mt-3">{success}</Text> : null}
@@ -733,7 +810,7 @@ export default function VotersFamilyScreen() {
             ) : null}
             <TextInput
               className="border border-slate-300 bg-white rounded-xl px-4 py-3 mb-3"
-              placeholder="Search family or address..."
+              placeholder="Search family, road, or number..."
               value={familySearch}
               onChangeText={setFamilySearch}
             />
@@ -752,7 +829,6 @@ export default function VotersFamilyScreen() {
                       <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
                     </View>
                     <Text className="text-slate-500 mt-1">Road: {item.roadName || "-"} | Family No: {item.familyNumber || "-"} | Flat: {item.flatNumber || "-"}</Text>
-                    <Text className="text-slate-500 mt-1">{item.familyAddress || "-"}</Text>
                     {(item.members || []).slice(0, 5).map((m: any, mi: number) => (
                       <Text key={`${item.familyId}-m-${mi}`} className="text-slate-600 text-xs mt-1">
                         {mi + 1}. {m.voterName} | {m.relationName || "-"} | {m.epicNo}

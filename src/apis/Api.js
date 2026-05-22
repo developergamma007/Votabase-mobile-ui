@@ -395,10 +395,13 @@ export const CRUDAPI = {
         }
     },
 
-    fetchFamilies: async (hasAssociation, page, size, boothId) => {
+    fetchFamilies: async (hasAssociation, page, size, boothId, wardId) => {
         try {
             const params = { page, size };
             if (boothId) params.boothId = boothId;
+            if (wardId !== undefined && wardId !== null && String(wardId).trim() !== '') {
+                params.wardId = Number(wardId);
+            }
             if (hasAssociation) params.association = hasAssociation;
             const response = await apiClient.get('/votebase/v1/api/family', { params });
             return response.data;
@@ -406,6 +409,31 @@ export const CRUDAPI = {
             console.log('Error while fetching families:', error.response?.data || error.message);
             throw error;
         }
+    },
+
+    fetchFamilySuggestions: async (type) => {
+        try {
+            const response = await apiClient.get(`/votebase/v1/api/family/suggestions?type=${encodeURIComponent(type)}`);
+            return response.data;
+        } catch (error) {
+            console.log('Error while fetching family suggestions:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    fetchAllFamilies: async (hasAssociation, boothId, wardId) => {
+        const size = 200;
+        let page = 0;
+        let all = [];
+        while (page < 100) {
+            const res = await CRUDAPI.fetchFamilies(hasAssociation, page, size, boothId, wardId);
+            const chunk = res?.content || res?.data?.content || res?.data?.result || res?.result || res?.data || [];
+            const list = Array.isArray(chunk) ? chunk : [];
+            all = all.concat(list);
+            if (list.length < size) break;
+            page += 1;
+        }
+        return all;
     },
 
     createFamily: async (jsonReq) => {
