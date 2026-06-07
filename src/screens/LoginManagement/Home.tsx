@@ -4,8 +4,6 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import LinearGradient from "react-native-linear-gradient";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { AuthContext } from "../../context/AuthContext";
-import { CRUDAPI } from "../../apis/Api";
-
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - 48) / 2;
 
@@ -19,27 +17,14 @@ type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 
 export default function LandingPage({ navigation }: Props) {
   const { userInfo } = useContext(AuthContext);
-  const [printEnabled, setPrintEnabled] = useState(true);
-
   const role = String(
     (typeof userInfo === 'object' && userInfo && (userInfo.role || userInfo.assignmentType)) || 'USER'
   )
     .replace(/^ROLE_/, '')
     .toUpperCase();
 
-  useEffect(() => {
-    if (role && role !== 'BOOTH') {
-      CRUDAPI.fetchMessageTemplate(null, 'PRINT')
-        .then((res) => {
-          const enabled = res?.data?.result?.enabled;
-          if (enabled !== undefined) setPrintEnabled(enabled);
-        })
-        .catch(() => setPrintEnabled(true));
-    }
-  }, [role]);
-
+  const isSuperAdmin = role === 'SUPER_ADMIN';
   const showFamily = ['SUPER_ADMIN', 'ADMIN', 'WARD', 'BOOTH', 'USER'].includes(role);
-  const showPrint = printEnabled || role === 'SUPER_ADMIN';
 
   const resolvedName =
     userInfo?.name ||
@@ -103,7 +88,7 @@ export default function LandingPage({ navigation }: Props) {
             "boothForFamily",
             "#8B5CF6"
           )}
-          {showFamily && renderWideCard(
+          {renderWideCard(
             "Meetings",
             "Schedule, assign and track meeting notes.",
             "calendar",
@@ -117,7 +102,7 @@ export default function LandingPage({ navigation }: Props) {
             "pollDay",
             "#EF4444"
           )}
-          {showPrint && renderWideCard(
+          {renderWideCard(
             "Print",
             "PDF/Excel exports for lists and slips.",
             "print",

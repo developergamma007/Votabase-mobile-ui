@@ -1,4 +1,4 @@
-package com.votabase
+package `in`.iswot.votabase
 
 import android.app.Application
 import com.facebook.react.PackageList

@@ -25,8 +25,10 @@ export default function AppNavigation() {
   const { userToken, loading } = useContext(AuthContext);
 
   return (
-    <NavigationContainer>
-      {userToken ? <AppStack /> : <AuthStack />}
-    </NavigationContainer>
+    <View style={{ flex: 1 }}>
+      <NavigationContainer>
+        {userToken ? <AppStack /> : <AuthStack />}
+      </NavigationContainer>
+    </View>
   );
 }

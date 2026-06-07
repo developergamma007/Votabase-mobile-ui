@@ -7,6 +7,7 @@ import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
 import { AuthContext } from "../../context/AuthContext";
 import { PrinterHelper } from "../../components/PrinterHelper";
 import DropDownPicker from "react-native-dropdown-picker";
+import FeatureComingSoon, { isVotabaseSuperAdmin } from "../../components/FeatureComingSoon";
 
 export default function PrinterScreen() {
     const { userInfo } = useContext(AuthContext) as any;
@@ -144,6 +145,10 @@ export default function PrinterScreen() {
             Alert.alert("Print Error", e.message || "Failed to communicate with printer.");
         }
     };
+
+    if (!isVotabaseSuperAdmin(userInfo)) {
+        return <FeatureComingSoon />;
+    }
 
     return (
         <View className="flex-1 bg-slate-50">

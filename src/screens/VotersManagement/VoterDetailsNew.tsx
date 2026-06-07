@@ -8,17 +8,20 @@ import {
     Alert,
     Linking,
     Platform,
-    ActivityIndicator
+    ActivityIndicator,
+    Modal,
 } from "react-native";
+import { Picker } from "@react-native-picker/picker";
 
 import Ionicons from "react-native-vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { WebView } from "react-native-webview";
-import { CRUDAPI, getAssemblyCode, GOOGLE_MAPS_API_KEY } from "../../apis/Api";
+import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
+import { buildOsmWebViewHtml } from "../../config/osmMap";
 import { addLog, updateLogStatus } from "../../components/LogsHelpers";
 import { AuthContext } from "../../context/AuthContext";
 import { bgColors } from "../../constants/colors";
-import { GetCurrentLocation } from "../../components/GetCurrentLocation";
+import { ACCURATE_GPS_OPTIONS, GetCurrentLocation } from "../../components/GetCurrentLocation";
 import DropDownPicker from "react-native-dropdown-picker";
 import { PrinterHelper } from "../../components/PrinterHelper";
 
@@ -44,7 +47,7 @@ export default function VoterInfo({ navigation, route }) {
     const mapHtml = useMemo(() => {
         const lat = Number(location?.latitude || voter?.latitude || 12.9716);
         const lng = Number(location?.longitude || voter?.longitude || 77.5946);
-        return `<!doctype html><html><head><meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" /><style>html,body,#map{margin:0;padding:0;width:100%;height:100%;}</style></head><body><div id="map"></div><script>function initMap(){var p={lat:${lat},lng:${lng}};var m=new google.maps.Map(document.getElementById('map'),{zoom:15,center:p,mapTypeControl:false,streetViewControl:false});new google.maps.Marker({position:p,map:m});}</script><script async defer src="https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap"></script></body></html>`;
+        return buildOsmWebViewHtml(lat, lng, { zoom: 15 });
     }, [location?.latitude, location?.longitude, voter?.latitude, voter?.longitude]);
 
     const [form, setForm] = useState({
@@ -115,6 +118,134 @@ export default function VoterInfo({ navigation, route }) {
         }
     };
 
+    const closeDropdown = () => setOpenDropdown(null);
+
+    const parseDobParts = (value) => {
+        const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!match) {
+            const now = new Date();
+            return { year: now.getFullYear() - 30, month: 1, day: 1 };
+        }
+        return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+    };
+
+    const formatDobParts = (year, month, day) =>
+        `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+    const DobDateField = ({ label, value, onChange }) => {
+        const initial = parseDobParts(value);
+        const [pickerOpen, setPickerOpen] = useState(false);
+        const [year, setYear] = useState(initial.year);
+        const [month, setMonth] = useState(initial.month);
+        const [day, setDay] = useState(initial.day);
+        const years = useMemo(() => {
+            const current = new Date().getFullYear();
+            return Array.from({ length: 100 }, (_, index) => current - index);
+        }, []);
+        const daysInMonth = useMemo(() => new Date(year, month, 0).getDate(), [year, month]);
+        const days = useMemo(
+            () => Array.from({ length: daysInMonth }, (_, index) => index + 1),
+            [daysInMonth],
+        );
+
+        useEffect(() => {
+            const next = parseDobParts(value);
+            setYear(next.year);
+            setMonth(next.month);
+            setDay(Math.min(next.day, new Date(next.year, next.month, 0).getDate()));
+        }, [value]);
+
+        const fieldStyle = {
+            borderWidth: 1,
+            borderColor: "#F3F4F6",
+            borderRadius: 12,
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            backgroundColor: "white",
+            color: "#1F2937",
+            minHeight: 52,
+        };
+
+        const openPicker = () => {
+            closeDropdown();
+            const parts = parseDobParts(value);
+            setYear(parts.year);
+            setMonth(parts.month);
+            setDay(parts.day);
+            setPickerOpen(true);
+        };
+
+        return (
+            <View style={{ marginBottom: 16, width: "100%" }}>
+                <Text style={{ fontSize: 14, fontWeight: "500", color: "#6B7280", marginBottom: 6 }}>{label}</Text>
+                <View style={{ flexDirection: "row", alignItems: "stretch", width: "100%" }}>
+                    <TouchableOpacity activeOpacity={0.85} onPress={openPicker} style={{ flex: 1, marginRight: 8 }}>
+                        <TextInput
+                            style={[fieldStyle, { marginRight: 0 }]}
+                            value={value || ""}
+                            placeholder="YYYY-MM-DD"
+                            placeholderTextColor="#94A3B8"
+                            editable={false}
+                            pointerEvents="none"
+                        />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={openPicker}
+                        style={{
+                            width: 52,
+                            minHeight: 52,
+                            borderWidth: 1,
+                            borderColor: "#F3F4F6",
+                            borderRadius: 12,
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: "white",
+                        }}
+                    >
+                        <Ionicons name="calendar-outline" size={22} color="#2563EB" />
+                    </TouchableOpacity>
+                </View>
+                <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
+                    <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.35)" }}>
+                        <View style={{ backgroundColor: "white", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16 }}>
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+                                <TouchableOpacity onPress={() => setPickerOpen(false)}>
+                                    <Text style={{ color: "#64748B", fontWeight: "600" }}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        const safeDay = Math.min(day, daysInMonth);
+                                        onChange(formatDobParts(year, month, safeDay));
+                                        setPickerOpen(false);
+                                    }}
+                                >
+                                    <Text style={{ color: "#2563EB", fontWeight: "700" }}>Done</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <View style={{ flexDirection: "row" }}>
+                                <Picker selectedValue={day} onValueChange={(item) => setDay(Number(item))} style={{ flex: 1 }}>
+                                    {days.map((item) => (
+                                        <Picker.Item key={`d-${item}`} label={String(item)} value={item} />
+                                    ))}
+                                </Picker>
+                                <Picker selectedValue={month} onValueChange={(item) => setMonth(Number(item))} style={{ flex: 1 }}>
+                                    {Array.from({ length: 12 }, (_, index) => index + 1).map((item) => (
+                                        <Picker.Item key={`m-${item}`} label={String(item)} value={item} />
+                                    ))}
+                                </Picker>
+                                <Picker selectedValue={year} onValueChange={(item) => setYear(Number(item))} style={{ flex: 1.2 }}>
+                                    {years.map((item) => (
+                                        <Picker.Item key={`y-${item}`} label={String(item)} value={item} />
+                                    ))}
+                                </Picker>
+                            </View>
+                        </View>
+                    </View>
+                </Modal>
+            </View>
+        );
+    };
+
     useEffect(() => {
         const initializeData = async () => {
             const lang = await AsyncStorage.getItem("app_language") || "en";
@@ -156,7 +287,8 @@ export default function VoterInfo({ navigation, route }) {
     }, []);
 
     const fetchLocation = async () => {
-        const loc = await GetCurrentLocation();
+        closeDropdown();
+        const loc = await GetCurrentLocation(ACCURATE_GPS_OPTIONS);
         if (loc) {
             setLocation(loc);
             setBanner({ type: "success", message: "Location captured successfully!" });
@@ -198,6 +330,7 @@ export default function VoterInfo({ navigation, route }) {
     };
 
     const openAction = (type) => {
+        closeDropdown();
         const phone = form.mobile || voter.mobile;
         if (!phone || phone.length !== 10) {
             Alert.alert("Error", "Valid 10-digit mobile number required");
@@ -265,7 +398,17 @@ export default function VoterInfo({ navigation, route }) {
     };
 
     const renderField = (key, label) => {
-        if (key === "mobile" || key === "dob" || key === "ifShifted" || key === "presentAddress" || key === "newWard" || key === "newBoothNo" || key === "newSerialNo" || key === "notAvailableReason") {
+        if (key === "dob") {
+            return (
+                <DobDateField
+                    key={key}
+                    label={label}
+                    value={form.dob}
+                    onChange={(next) => handleChange("dob", next)}
+                />
+            );
+        }
+        if (key === "mobile" || key === "ifShifted" || key === "presentAddress" || key === "newWard" || key === "newBoothNo" || key === "newSerialNo" || key === "notAvailableReason") {
             return (
                 <View key={key} style={{ marginBottom: 16 }}>
                     <Text style={{ fontSize: 14, fontWeight: "500", color: "#6B7280", marginBottom: 6 }}>{label}</Text>
@@ -276,6 +419,7 @@ export default function VoterInfo({ navigation, route }) {
                         placeholderTextColor="#94A3B8"
                         style={{ borderWidth: 1, borderColor: "#F3F4F6", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, backgroundColor: "white", color: "#1F2937", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }}
                         onChangeText={(text) => handleChange(key, text)}
+                        onFocus={closeDropdown}
                         multiline={key === "presentAddress" || key === "notes"}
                         numberOfLines={key === "presentAddress" ? 3 : 1}
                     />
@@ -294,9 +438,15 @@ export default function VoterInfo({ navigation, route }) {
                     value={form[key]}
                     items={isMulti ? govtSchemeItems : items}
                     setOpen={(isOpen) => setOpenDropdown(isOpen ? key : null)}
+                    onClose={closeDropdown}
+                    closeAfterSelecting={!isMulti}
                     setValue={(callback) => {
                         const val = callback(form[key]);
                         handleChange(key, val);
+                        if (!isMulti) setOpenDropdown(null);
+                    }}
+                    onSelectItem={() => {
+                        if (!isMulti) setOpenDropdown(null);
                     }}
                     multiple={isMulti}
                     mode="BADGE"
@@ -324,7 +474,12 @@ export default function VoterInfo({ navigation, route }) {
     return (
         <View style={{ flex: 1, backgroundColor: "white" }}>
             {/* Header */}
-            <ScrollView style={{ flex: 1, paddingHorizontal: 20, marginTop: 10 }} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                style={{ flex: 1, paddingHorizontal: 20, marginTop: 10 }}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                onScrollBeginDrag={closeDropdown}
+            >
                 {/* Voter Details Card */}
                 <View style={{ backgroundColor: "#F9FAFB", borderRadius: 24, padding: 24, marginBottom: 24, borderWidth: 1, borderColor: "#F3F4F6" }}>
                     <View style={{ gap: 16 }}>
@@ -405,13 +560,13 @@ export default function VoterInfo({ navigation, route }) {
 
                 {/* Quick Actions */}
                 <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 32, gap: 12 }}>
-                    <TouchableOpacity onPress={() => openAction('sms')} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
+                    <TouchableOpacity onPress={() => { closeDropdown(); openAction('sms'); }} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
                         <Ionicons name="chatbubble-outline" size={22} color="#4B5563" />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => openAction('whatsapp')} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
+                    <TouchableOpacity onPress={() => { closeDropdown(); openAction('whatsapp'); }} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
                         <Ionicons name="logo-whatsapp" size={22} color="#22C55E" />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => openAction('call')} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
+                    <TouchableOpacity onPress={() => { closeDropdown(); openAction('call'); }} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
                         <Ionicons name="call-outline" size={22} color="#3B82F6" />
                     </TouchableOpacity>
                 </View>
@@ -421,7 +576,10 @@ export default function VoterInfo({ navigation, route }) {
                     {["PRIMARY", "ADDITIONAL", "NOTES"].map(tab => (
                         <TouchableOpacity
                             key={tab}
-                            onPress={() => setActiveTab(tab)}
+                            onPress={() => {
+                                closeDropdown();
+                                setActiveTab(tab);
+                            }}
                             style={{
                                 flex: 1,
                                 paddingVertical: 12,

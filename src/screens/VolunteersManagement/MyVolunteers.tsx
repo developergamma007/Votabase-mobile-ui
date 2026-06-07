@@ -15,11 +15,19 @@ import { CRUDAPI, getAssemblyCode } from '../../apis/Api';
 import { AuthContext } from '../../context/AuthContext';
 import { premium } from '../../constants/premiumTheme';
 import ListPreview from '../../components/ListPreview';
+import { isProtectedVolunteerLogin } from '../../helpers/volunteerLoginHelpers';
 
 export default function MyVolunteers() {
   const navigation = useNavigation();
-  const { userInfo } = useContext(AuthContext);
+  const { userInfo, setBanner } = useContext(AuthContext) as { userInfo?: unknown; setBanner?: (b: { type: string; message: string }) => void };
   const role = String((userInfo as any)?.role || 'ADMIN').replace('ROLE_', '');
+  const managerLevel = (() => {
+    const r = role.toUpperCase();
+    const assignmentType = String((userInfo as any)?.assignmentType || (userInfo as any)?.assignment_type || '').toUpperCase();
+    if (r === 'SUPER_ADMIN' || r === 'ADMIN') return r;
+    if (assignmentType === 'ASSEMBLY' || assignmentType === 'WARD') return assignmentType;
+    return r;
+  })();
   const [assemblyId, setAssemblyId] = useState('');
 
   const [selected, setSelected] = useState<string[]>([]);
@@ -27,7 +35,6 @@ export default function MyVolunteers() {
   const [openSort, setOpenSort] = useState(false);
   const [workingLevel, setWorkingLevel] = useState('');
   const [sortMode, setSortMode] = useState('latest');
-  const [showDeleted, setShowDeleted] = useState(false);
   const [items, setItems] = useState([
     { label: 'All Levels', value: '' },
     { label: 'Assembly', value: 'ASSEMBLY' },
@@ -88,7 +95,7 @@ export default function MyVolunteers() {
         sortConfig.sortBy,
         sortConfig.direction,
         workingLevel,
-        showDeleted ? 'true' : 'false',
+        'false',
         assemblyId
       );
 
@@ -113,7 +120,29 @@ export default function MyVolunteers() {
   useEffect(() => {
     setPage(0);
     fetchVolunteerList(0, true);
-  }, [debouncedSearch, workingLevel, sortMode, showDeleted, assemblyId, role]);
+  }, [debouncedSearch, workingLevel, sortMode, assemblyId, role]);
+
+  useEffect(() => {
+    if (managerLevel === 'WARD') {
+      setItems([
+        { label: 'All Levels', value: '' },
+        { label: 'Booth', value: 'BOOTH' },
+      ]);
+    } else if (managerLevel === 'ASSEMBLY') {
+      setItems([
+        { label: 'All Levels', value: '' },
+        { label: 'Ward', value: 'WARD' },
+        { label: 'Booth', value: 'BOOTH' },
+      ]);
+    } else {
+      setItems([
+        { label: 'All Levels', value: '' },
+        { label: 'Assembly', value: 'ASSEMBLY' },
+        { label: 'Ward', value: 'WARD' },
+        { label: 'Booth', value: 'BOOTH' },
+      ]);
+    }
+  }, [managerLevel]);
 
   const loadMore = () => {
     if (!loadingMore && page + 1 < totalPages) {
@@ -171,24 +200,18 @@ export default function MyVolunteers() {
     }
   };
 
-  const stats = volunteersList.reduce(
+  const isVolunteerDeleted = (v: any) => v.deleted === true || v.deleted === 'true' || v.deleted === 1;
+  const visibleVolunteers = volunteersList.filter((v) => !isVolunteerDeleted(v));
+  const stats = visibleVolunteers.reduce(
     (acc, v) => {
-      const deleted = v.deleted === true || v.deleted === 'true' || v.deleted === 1;
       const blocked = v.blocked === true || v.blocked === 'true' || v.blocked === 1;
-      if (deleted) acc.deleted += 1;
-      else {
-        acc.total += 1;
-        if (blocked) acc.blocked += 1;
-        else acc.active += 1;
-      }
+      acc.total += 1;
+      if (blocked) acc.blocked += 1;
+      else acc.active += 1;
       return acc;
     },
-    { total: 0, active: 0, blocked: 0, deleted: 0 }
+    { total: 0, active: 0, blocked: 0 }
   );
-
-  const visibleVolunteers = showDeleted
-    ? volunteersList.filter((v) => v.deleted === true || v.deleted === 'true' || v.deleted === 1)
-    : volunteersList.filter((v) => !(v.deleted === true || v.deleted === 'true' || v.deleted === 1));
 
   const getDisplayName = (v: any) => {
     const full = `${v.firstName || ''} ${v.lastName || ''}`.trim();
@@ -206,17 +229,9 @@ export default function MyVolunteers() {
       .join('');
   };
 
-  const getStatusLabel = (v: any) => {
-    if (v.deleted) return 'DELETED';
-    if (v.blocked) return 'BLOCKED';
-    return 'ACTIVE';
-  };
+  const getStatusLabel = (v: any) => (v.blocked ? 'BLOCKED' : 'ACTIVE');
 
-  const getStatusStyle = (v: any) => {
-    if (v.deleted) return styles.badgeDeleted;
-    if (v.blocked) return styles.badgeBlocked;
-    return styles.badgeActive;
-  };
+  const getStatusStyle = (v: any) => (v.blocked ? styles.badgeBlocked : styles.badgeActive);
 
   const getWardLabels = (v: any) => {
     if (Array.isArray(v.wardNames) && v.wardNames.length) return v.wardNames.map(String);
@@ -231,13 +246,40 @@ export default function MyVolunteers() {
   };
 
   const handleEdit = (v: any) => {
-    (navigation as any).navigate('addVolunteer', { editVolunteer: v });
+    if (isProtectedVolunteerLogin(v)) {
+      setBanner?.({
+        type: 'error',
+        message: 'Super Admin logins cannot be edited here. Contact a platform administrator.',
+      });
+      return;
+    }
+    const assignmentType = String(v.workingLevel || v.assignmentType || 'ASSEMBLY').toUpperCase();
+    const assignmentIds = String(v.assignmentId || '')
+      .split(',')
+      .map((val: string) => val.trim())
+      .filter(Boolean);
+    (navigation as any).navigate('addVolunteer', {
+      editVolunteer: {
+        firstName: v.firstName || v.userName || '',
+        phone: v.phone || '',
+        workingLevel: assignmentType,
+        assemblyId: (v.assemblyIds && v.assemblyIds[0])
+          ? String(v.assemblyIds[0])
+          : (v.assemblyId ? String(v.assemblyId) : ''),
+        wardIds: (v.wardIds && v.wardIds.length)
+          ? v.wardIds.map((id: unknown) => String(id))
+          : (assignmentType === 'WARD' ? assignmentIds : []),
+        boothIds: (v.boothIds && v.boothIds.length)
+          ? v.boothIds.map((id: unknown) => String(id))
+          : (assignmentType === 'BOOTH' ? assignmentIds : []),
+      },
+    });
   };
 
   const renderStatPill = (
     label: string,
     value: number,
-    variant: 'total' | 'active' | 'blocked' | 'deleted',
+    variant: 'total' | 'active' | 'blocked',
     onPress?: () => void
   ) => {
     const variantStyle = STAT_PILL_VARIANTS[variant];
@@ -252,7 +294,6 @@ export default function MyVolunteers() {
     const boxStyle = [
       styles.statPill,
       variantStyle.box,
-      showDeleted && variant === 'deleted' && styles.pillDeletedActive,
     ];
 
     if (onPress) {
@@ -315,7 +356,6 @@ export default function MyVolunteers() {
             {renderStatPill('Total', stats.total, 'total')}
             {renderStatPill('Active', stats.active, 'active')}
             {renderStatPill('Blocked', stats.blocked, 'blocked')}
-            {renderStatPill('Deleted', stats.deleted, 'deleted', () => setShowDeleted((c) => !c))}
           </View>
         </View>
 
@@ -390,24 +430,21 @@ export default function MyVolunteers() {
                   </View>
 
                   <View style={styles.actionRow}>
-                    <TouchableOpacity style={styles.btnEdit} onPress={() => handleEdit(v)}>
-                      <Text style={styles.btnEditText}>Edit</Text>
-                    </TouchableOpacity>
-                    {v.deleted ? (
-                      <TouchableOpacity
-                        style={styles.btnNeutral}
-                        onPress={() => handleDeleteUndelete(v.userName, false)}
-                      >
-                        <Text style={styles.btnNeutralText}>Undelete</Text>
-                      </TouchableOpacity>
+                    {isProtectedVolunteerLogin(v) ? (
+                      <View style={styles.btnEditDisabled}>
+                        <Text style={styles.btnEditDisabledText}>Edit disabled</Text>
+                      </View>
                     ) : (
-                      <TouchableOpacity
-                        style={styles.btnNeutral}
-                        onPress={() => handleDeleteUndelete(v.userName, true)}
-                      >
-                        <Text style={styles.btnNeutralText}>Delete</Text>
+                      <TouchableOpacity style={styles.btnEdit} onPress={() => handleEdit(v)}>
+                        <Text style={styles.btnEditText}>Edit</Text>
                       </TouchableOpacity>
                     )}
+                    <TouchableOpacity
+                      style={styles.btnNeutral}
+                      onPress={() => handleDeleteUndelete(v.userName, true)}
+                    >
+                      <Text style={styles.btnNeutralText}>Delete</Text>
+                    </TouchableOpacity>
                     {v.blocked ? (
                       <TouchableOpacity
                         style={styles.btnSuccess}
@@ -607,6 +644,15 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, gap: 8 },
   btnEdit: { backgroundColor: premium.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   btnEditText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  btnEditDisabled: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  btnEditDisabledText: { color: '#94A3B8', fontSize: 12, fontWeight: '700' },
   btnNeutral: { backgroundColor: '#475569', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   btnNeutralText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   btnDanger: { backgroundColor: premium.error, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },

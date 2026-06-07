@@ -1,15 +1,25 @@
-import React, { useContext, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Share, Linking } from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { WebView } from "react-native-webview";
+import DropDownPicker from "react-native-dropdown-picker";
 import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
 import { AuthContext } from "../../context/AuthContext";
-import { buildFamilyMapTooltipText } from "../../components/FamilyFormHelpers";
+import { buildFamilyMapTooltipText, canViewFamilyAnalysis } from "../../components/FamilyFormHelpers";
+import {
+  buildFamilyPointsOsmWebViewHtml,
+  buildVolunteerPointsOsmWebViewHtml,
+  getOsmExternalUrl,
+} from "../../config/osmMap";
 
 export default function VolunteerAnalysis() {
   const { userInfo } = useContext(AuthContext) as any;
   const role = String(userInfo?.role || "").replace("ROLE_", "").toUpperCase();
   const hideFamilyLabelsOnMap = ["WARD", "BOOTH", "USER"].includes(role);
+  const isBoothRole = role === "BOOTH";
+  const canUseFamilyAnalysis = canViewFamilyAnalysis(userInfo);
+
   const [rows, setRows] = useState([]);
   const [fields, setFields] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -18,9 +28,12 @@ export default function VolunteerAnalysis() {
   const [wards, setWards] = useState([]);
   const [selectedWard, setSelectedWard] = useState('');
   const [assemblyCode, setAssemblyCode] = useState('');
+  const [assemblyItems, setAssemblyItems] = useState<{ label: string; value: string }[]>([]);
+  const [openAssembly, setOpenAssembly] = useState(false);
   const [sortMode, setSortMode] = useState('name-asc');
   const [activeTab, setActiveTab] = useState("table");
   const [mapDataMode, setMapDataMode] = useState("volunteers");
+  const [tableDataMode, setTableDataMode] = useState("voters");
   const [mapPoints, setMapPoints] = useState([]);
   const [mapLoading, setMapLoading] = useState(false);
   const [mapError, setMapError] = useState("");
@@ -32,12 +45,37 @@ export default function VolunteerAnalysis() {
 
   useEffect(() => {
     const init = async () => {
-      const code = await getAssemblyCode();
+      let code = String(await getAssemblyCode() || '').trim();
+      if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
+        try {
+          const dropdownResp = await CRUDAPI.getAssemblyDropdown();
+          const payload = dropdownResp?.data?.result || dropdownResp?.result || dropdownResp?.data || [];
+          const items = (Array.isArray(payload) ? payload : []).map((a: any) => ({
+            label: a?.name && !String(a.name).includes(String(a.id))
+              ? `${a.name} (${a.id})`
+              : (a?.name || `Assembly ${a?.id}`),
+            value: String(a?.code || a?.assemblyCode || a?.id || ''),
+          })).filter((item) => item.value);
+          setAssemblyItems(items);
+          if (items.length) {
+            const validStored = code && items.some((item) => item.value === code);
+            code = validStored ? code : items[0].value;
+          }
+        } catch {
+          setAssemblyItems(code ? [{ label: code, value: code }] : []);
+        }
+      }
       setAssemblyCode(code);
-      loadWards(code);
+      if (code) await loadWards(code);
     };
     init();
-  }, []);
+  }, [role]);
+
+  useEffect(() => {
+    if (!assemblyCode) return;
+    setSelectedWard('');
+    loadWards(assemblyCode);
+  }, [assemblyCode]);
 
   const loadWards = async (code) => {
     try {
@@ -56,28 +94,32 @@ export default function VolunteerAnalysis() {
     setLoading(true);
     setError("");
     try {
-      const res = await CRUDAPI.fetchVolunteerAnalysis(selectedWard || undefined, viewMode);
+      const res = tableDataMode === "families"
+        ? await CRUDAPI.fetchFamilyAnalysis(selectedWard || undefined, viewMode, assemblyCode || undefined)
+        : await CRUDAPI.fetchVolunteerAnalysis(selectedWard || undefined, viewMode, assemblyCode || undefined);
       const payload = res?.data?.result || res?.result || {};
       setRows(payload?.rows || []);
       setFields(payload?.fields || []);
     } catch (err) {
-      setError(err?.message || "Unable to load volunteer analysis.");
+      setError(err?.message || "Unable to load analysis.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (isBoothRole) return;
+    if (tableDataMode === "families" && !canUseFamilyAnalysis) return;
     loadAnalysis();
-  }, [viewMode, selectedWard, assemblyCode]);
+  }, [viewMode, selectedWard, assemblyCode, isBoothRole, tableDataMode, canUseFamilyAnalysis]);
 
   const loadMapPoints = async () => {
     setMapLoading(true);
     setMapError("");
     try {
       const res = mapDataMode === "families"
-        ? await CRUDAPI.fetchFamilyLocationPoints(selectedWard || undefined)
-        : await CRUDAPI.fetchVolunteerLocationPoints(selectedWard || undefined);
+        ? await CRUDAPI.fetchFamilyLocationPoints(selectedWard || undefined, assemblyCode || undefined)
+        : await CRUDAPI.fetchVolunteerLocationPoints(selectedWard || undefined, assemblyCode || undefined);
       const payload = res?.data?.result || res?.result || [];
       const points = Array.isArray(payload) ? payload : [];
       const normalized = points
@@ -112,14 +154,33 @@ export default function VolunteerAnalysis() {
 
   useEffect(() => {
     if (activeTab !== "map") return;
+    if (mapDataMode === "families" && !canUseFamilyAnalysis) return;
     loadMapPoints();
-  }, [activeTab, mapDataMode, selectedWard]);
+  }, [activeTab, mapDataMode, selectedWard, assemblyCode, canUseFamilyAnalysis]);
+
+  useEffect(() => {
+    if (canUseFamilyAnalysis) return;
+    if (tableDataMode === "families") setTableDataMode("voters");
+    if (mapDataMode === "families") setMapDataMode("volunteers");
+  }, [canUseFamilyAnalysis, tableDataMode, mapDataMode]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isBoothRole) return undefined;
+      if (activeTab === "table") {
+        loadAnalysis();
+      } else {
+        loadMapPoints();
+      }
+      return undefined;
+    }, [activeTab, selectedWard, assemblyCode, mapDataMode, tableDataMode, isBoothRole, viewMode]),
+  );
 
   const loadDetails = async () => {
     setDetailLoading(true);
     setDetailError("");
     try {
-      const res = await CRUDAPI.fetchVolunteerEnrichmentDetails(selectedWard || undefined, undefined, undefined, 0, 100);
+      const res = await CRUDAPI.fetchVolunteerEnrichmentDetails(selectedWard || undefined, undefined, undefined, 0, 100, assemblyCode || undefined);
       const payload = res?.data?.result || res?.result || [];
       setDetailRows(Array.isArray(payload) ? payload : []);
     } catch (err) {
@@ -139,12 +200,16 @@ export default function VolunteerAnalysis() {
   const shareDetailCsv = async () => {
     const rowsForExport = detailRows || [];
     if (!rowsForExport.length) return;
-    const headers = ["Ward", "Name", "EPIC", "Booth", "Updated By", "Agent Phone", "Updated At"];
+    const headers = ["Ward", "Voter Name", "Voter EPIC", "Booth", "Voter Number", "Gender", "Age", "Voter Mobile", "Agent Name", "Agent Number", "Updated At"];
     const dataRows = rowsForExport.map((r) => [
       r.wardName || "-",
       r.name || [r.firstMiddleNameEn, r.lastNameEn].filter(Boolean).join(" ") || "-",
       r.epicNo || r.epic || "-",
       r.boothNo || "-",
+      r.voterSerialNo ?? "-",
+      r.gender || "-",
+      r.age ?? "-",
+      r.mobile || "-",
       r.updatedByName || "-",
       r.updatedByPhone || "-",
       formatDateTime(r.lastUpdatedAt),
@@ -190,12 +255,17 @@ export default function VolunteerAnalysis() {
 
   const summaryTotals = useMemo(() => {
     if (viewMode === "agent") return null;
+    const visitKey = tableDataMode === "families" ? "totalFamilies" : "total";
     return {
       agentsWorked: sortedRows.reduce((sum, row) => sum + (Number(row.agentsWorked) || 0), 0),
       boothsCovered: sortedRows.reduce((sum, row) => sum + (Number(row.boothsCovered) || 0), 0),
-      votersMet: sortedRows.reduce((sum, row) => sum + (Number(row.total) || 0), 0),
+      votersMet: sortedRows.reduce((sum, row) => sum + (Number(row[visitKey]) || 0), 0),
     };
-  }, [sortedRows, viewMode]);
+  }, [sortedRows, viewMode, tableDataMode]);
+
+  const groupedVisitCount = (row) => (
+    tableDataMode === "families" ? (row.totalFamilies ?? 0) : (row.total ?? 0)
+  );
 
   const buildExportRows = () => {
     const baseHeaders = fields.map((f) => f.label);
@@ -203,7 +273,7 @@ export default function VolunteerAnalysis() {
 
     if (viewMode === "agent") {
       return {
-        headers: ["Agent Name", "Mobile No", ...baseHeaders, "Last Updated At"],
+        headers: ["Agent Name", "Agent Number", ...baseHeaders, "Last Updated At"],
         dataRows: sortedRows.map((row) => [
           row.agentName || "",
           row.phone || "",
@@ -276,15 +346,63 @@ export default function VolunteerAnalysis() {
   const hasRows = sortedRows.length > 0;
   const openInMaps = async (item) => {
     if (!item?.latitude || !item?.longitude) return;
-    const url = `https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}`;
-    await Linking.openURL(url);
+    const url = getOsmExternalUrl(item.latitude, item.longitude);
+    if (url) await Linking.openURL(url);
   };
+
+  const interactiveMapHtml = useMemo(() => {
+    if (!mapPoints.length) return "";
+    if (mapDataMode === "families") {
+      return buildFamilyPointsOsmWebViewHtml(mapPoints, { fullDetails: !hideFamilyLabelsOnMap });
+    }
+    return buildVolunteerPointsOsmWebViewHtml(mapPoints);
+  }, [mapPoints, mapDataMode, hideFamilyLabelsOnMap]);
+
+  const handleMapWebViewMessage = (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data?.type === "select" && Number.isFinite(data.index)) {
+        const item = mapPoints[data.index];
+        if (item) setSelectedMapItem(item);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  if (isBoothRole) {
+    return (
+      <View className="flex-1 bg-slate-50 p-6 justify-center">
+        <Text className="text-center text-slate-600 text-base font-semibold">
+          Volunteer Analysis is not available for booth-level access.
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 bg-white">
       <ScrollView className="p-4">
         <Text className="text-xl font-bold text-gray-800 mb-1">Volunteer Analysis</Text>
         <Text className="text-gray-500 text-xs mb-4">Data collection coverage across different dimensions.</Text>
+
+        {(role === 'SUPER_ADMIN' || role === 'ADMIN') && assemblyItems.length > 0 ? (
+          <View className="mb-4 z-50">
+            <Text className="text-gray-700 font-semibold mb-2">Assembly</Text>
+            <DropDownPicker
+              open={openAssembly}
+              value={assemblyCode}
+              items={assemblyItems}
+              setOpen={setOpenAssembly}
+              setValue={setAssemblyCode}
+              setItems={setAssemblyItems}
+              style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
+              dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
+              textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
+              placeholderStyle={{ color: '#94A3B8' }}
+            />
+          </View>
+        ) : null}
 
         <View className="mb-4 flex-row gap-2">
           {["table", "map"].map((tab) => (
@@ -315,6 +433,25 @@ export default function VolunteerAnalysis() {
 
         {activeTab === "table" ? (
           <>
+            {canUseFamilyAnalysis ? (
+              <View className="mb-4">
+                <Text className="text-gray-700 font-semibold mb-2">Data</Text>
+                <View className="flex-row gap-2">
+                  {[
+                    { label: "Family visits", value: "families" },
+                    { label: "Voter updates", value: "voters" },
+                  ].map((opt) => (
+                    <TouchableOpacity
+                      key={opt.value}
+                      onPress={() => setTableDataMode(opt.value)}
+                      className={`px-4 py-2 rounded-full border ${tableDataMode === opt.value ? "bg-blue-600 border-blue-600" : "bg-white border-gray-200"}`}
+                    >
+                      <Text className={`text-xs font-bold ${tableDataMode === opt.value ? "text-white" : "text-gray-700"}`}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ) : null}
             <View className="mb-4">
               <Text className="text-gray-700 font-semibold mb-2">View Mode</Text>
               <View className="flex-row flex-wrap gap-2">
@@ -390,8 +527,8 @@ export default function VolunteerAnalysis() {
                 <View className="bg-blue-50 px-3 py-2 border-b border-blue-100">
                   <Text className="text-[11px] text-blue-900 font-medium">
                     {viewMode !== "booth"
-                      ? `Total Agents: ${summaryTotals.agentsWorked}   Total Booths: ${summaryTotals.boothsCovered}   Total Voters Met: ${summaryTotals.votersMet}`
-                      : `Total Agents: ${summaryTotals.agentsWorked}   Total Voters Met: ${summaryTotals.votersMet}`}
+                      ? `Total Agents: ${summaryTotals.agentsWorked}   Total Booths: ${summaryTotals.boothsCovered}   Total ${tableDataMode === "families" ? "Families" : "Voters"}: ${summaryTotals.votersMet}`
+                      : `Total Agents: ${summaryTotals.agentsWorked}   Total ${tableDataMode === "families" ? "Families" : "Voters"}: ${summaryTotals.votersMet}`}
                   </Text>
                 </View>
               ) : null}
@@ -399,7 +536,13 @@ export default function VolunteerAnalysis() {
                 {viewMode === "agent" ? (
                   <>
                     <Text className="w-36 p-3 font-bold text-gray-700">Agent Name</Text>
-                    <Text className="w-28 p-3 font-bold text-gray-700 text-center">Mobile No</Text>
+                    <Text className="w-28 p-3 font-bold text-gray-700 text-center">Agent Number</Text>
+                    {tableDataMode === "families" ? (
+                      <>
+                        <Text className="w-24 p-3 font-bold text-gray-700 text-center">Buildings</Text>
+                        <Text className="w-24 p-3 font-bold text-gray-700 text-center">Families</Text>
+                      </>
+                    ) : null}
                   </>
                 ) : null}
                 {viewMode === "date" ? (
@@ -407,7 +550,7 @@ export default function VolunteerAnalysis() {
                     <Text className="w-28 p-3 font-bold text-gray-700">Date</Text>
                     <Text className="w-24 p-3 font-bold text-gray-700 text-center">Agents</Text>
                     <Text className="w-24 p-3 font-bold text-gray-700 text-center">Booths</Text>
-                    <Text className="w-24 p-3 font-bold text-gray-700 text-center">Voters</Text>
+                    <Text className="w-24 p-3 font-bold text-gray-700 text-center">{tableDataMode === "families" ? "Families" : "Voters"}</Text>
                   </>
                 ) : null}
                 {viewMode === "ward" ? (
@@ -415,14 +558,14 @@ export default function VolunteerAnalysis() {
                     <Text className="w-28 p-3 font-bold text-gray-700">Ward</Text>
                     <Text className="w-24 p-3 font-bold text-gray-700 text-center">Agents</Text>
                     <Text className="w-24 p-3 font-bold text-gray-700 text-center">Booths</Text>
-                    <Text className="w-24 p-3 font-bold text-gray-700 text-center">Voters</Text>
+                    <Text className="w-24 p-3 font-bold text-gray-700 text-center">{tableDataMode === "families" ? "Families" : "Voters"}</Text>
                   </>
                 ) : null}
                 {viewMode === "booth" ? (
                   <>
                     <Text className="w-24 p-3 font-bold text-gray-700">Booth No.</Text>
                     <Text className="w-24 p-3 font-bold text-gray-700 text-center">Agents</Text>
-                    <Text className="w-24 p-3 font-bold text-gray-700 text-center">Voters</Text>
+                    <Text className="w-24 p-3 font-bold text-gray-700 text-center">{tableDataMode === "families" ? "Families" : "Voters"}</Text>
                   </>
                 ) : null}
                 {fields.map((f) => (
@@ -439,6 +582,12 @@ export default function VolunteerAnalysis() {
                     <>
                       <Text className="w-36 p-3 text-xs text-gray-800">{row.agentName || "-"}</Text>
                       <Text className="w-28 p-3 text-xs text-gray-600 text-center">{row.phone || "-"}</Text>
+                      {tableDataMode === "families" ? (
+                        <>
+                          <Text className="w-24 p-3 text-xs text-gray-600 text-center">{row.totalBuildings ?? 0}</Text>
+                          <Text className="w-24 p-3 text-xs text-gray-600 text-center">{row.totalFamilies ?? 0}</Text>
+                        </>
+                      ) : null}
                     </>
                   ) : null}
                   {viewMode === "date" ? (
@@ -446,7 +595,7 @@ export default function VolunteerAnalysis() {
                       <Text className="w-28 p-3 text-xs text-gray-800">{row.label || row.groupKey || "-"}</Text>
                       <Text className="w-24 p-3 text-xs text-gray-600 text-center">{row.agentsWorked ?? 0}</Text>
                       <Text className="w-24 p-3 text-xs text-gray-600 text-center">{row.boothsCovered ?? 0}</Text>
-                      <Text className="w-24 p-3 text-xs text-gray-600 text-center">{row.total ?? 0}</Text>
+                      <Text className="w-24 p-3 text-xs text-gray-600 text-center">{groupedVisitCount(row)}</Text>
                     </>
                   ) : null}
                   {viewMode === "ward" ? (
@@ -454,14 +603,14 @@ export default function VolunteerAnalysis() {
                       <Text className="w-28 p-3 text-xs text-gray-800">{row.label || row.groupKey || "-"}</Text>
                       <Text className="w-24 p-3 text-xs text-gray-600 text-center">{row.agentsWorked ?? 0}</Text>
                       <Text className="w-24 p-3 text-xs text-gray-600 text-center">{row.boothsCovered ?? 0}</Text>
-                      <Text className="w-24 p-3 text-xs text-gray-600 text-center">{row.total ?? 0}</Text>
+                      <Text className="w-24 p-3 text-xs text-gray-600 text-center">{groupedVisitCount(row)}</Text>
                     </>
                   ) : null}
                   {viewMode === "booth" ? (
                     <>
                       <Text className="w-24 p-3 text-xs text-gray-800">{row.label || row.groupKey || "-"}</Text>
                       <Text className="w-24 p-3 text-xs text-gray-600 text-center">{row.agentsWorked ?? 0}</Text>
-                      <Text className="w-24 p-3 text-xs text-gray-600 text-center">{row.total ?? 0}</Text>
+                      <Text className="w-24 p-3 text-xs text-gray-600 text-center">{groupedVisitCount(row)}</Text>
                     </>
                   ) : null}
                   {fields.map((f) => (
@@ -498,21 +647,23 @@ export default function VolunteerAnalysis() {
           </>
         ) : (
           <View className="mb-8">
-            <View className="flex-row items-center gap-2 mb-3">
-              <View className="flex-1 bg-indigo-50 border border-indigo-100 rounded-2xl p-1 flex-row">
-                {["volunteers", "families"].map((mode) => (
-                  <TouchableOpacity
-                    key={mode}
-                    onPress={() => setMapDataMode(mode)}
-                    className={`flex-1 py-2 rounded-xl ${mapDataMode === mode ? "bg-blue-600" : "bg-white border border-gray-200"}`}
-                  >
-                    <Text className={`text-center text-sm font-semibold ${mapDataMode === mode ? "text-white" : "text-gray-700"}`}>
-                      {mode === "volunteers" ? "Users" : "Families"}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+            {canUseFamilyAnalysis ? (
+              <View className="flex-row items-center gap-2 mb-3">
+                <View className="flex-1 bg-indigo-50 border border-indigo-100 rounded-2xl p-1 flex-row">
+                  {["volunteers", "families"].map((mode) => (
+                    <TouchableOpacity
+                      key={mode}
+                      onPress={() => setMapDataMode(mode)}
+                      className={`flex-1 py-2 rounded-xl ${mapDataMode === mode ? "bg-blue-600" : "bg-white border border-gray-200"}`}
+                    >
+                      <Text className={`text-center text-sm font-semibold ${mapDataMode === mode ? "text-white" : "text-gray-700"}`}>
+                        {mode === "volunteers" ? "Users" : "Families"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
-            </View>
+            ) : null}
             <Text className="text-xs font-semibold text-slate-600 mb-3">
               {mapDataMode === "families"
                 ? (hideFamilyLabelsOnMap ? "Family map (tap marker for details)" : "Family Location")
@@ -525,6 +676,19 @@ export default function VolunteerAnalysis() {
             ) : null}
             {!mapLoading && mapPoints.length > 0 ? (
               <View className="gap-3">
+                {interactiveMapHtml ? (
+                  <View className="h-72 w-full rounded-2xl overflow-hidden border border-gray-200 bg-gray-100">
+                    <WebView
+                      source={{ html: interactiveMapHtml }}
+                      originWhitelist={["*"]}
+                      javaScriptEnabled
+                      domStorageEnabled
+                      scrollEnabled={false}
+                      onMessage={handleMapWebViewMessage}
+                      style={{ flex: 1 }}
+                    />
+                  </View>
+                ) : null}
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
                   {mapPoints.map((item, idx) => (
                     <TouchableOpacity
@@ -544,7 +708,7 @@ export default function VolunteerAnalysis() {
                 {selectedMapItem ? (
                   <View className="border border-gray-200 rounded-2xl p-4 bg-gray-50">
                     {mapDataMode === "families" ? (
-                      <Text className="text-xs text-gray-800 mb-3 whitespace-pre-line">{buildFamilyMapTooltipText(selectedMapItem)}</Text>
+                      <Text className="text-xs text-gray-800 mb-3 whitespace-pre-line">{buildFamilyMapTooltipText(selectedMapItem, role)}</Text>
                     ) : (
                       <Text className="font-bold text-gray-800 mb-2">{selectedMapItem.name || "-"}</Text>
                     )}
@@ -556,13 +720,7 @@ export default function VolunteerAnalysis() {
                         <Text className="text-xs text-gray-700 mb-3">Gender: {selectedMapItem.gender || "-"}</Text>
                       </>
                     )}
-                    <View className="h-48 w-full mb-3 rounded-lg overflow-hidden bg-gray-200">
-                      <WebView 
-                        source={{ uri: `https://maps.google.com/maps?q=${selectedMapItem.latitude},${selectedMapItem.longitude}&z=15&output=embed` }} 
-                        style={{ flex: 1 }} 
-                      />
-                    </View>
-                    <TouchableOpacity onPress={() => openInMaps(selectedMapItem)} className="bg-blue-600 rounded-lg py-2">
+                    <TouchableOpacity onPress={() => openInMaps(selectedMapItem)} className="bg-blue-600 rounded-lg py-2 mt-1">
                       <Text className="text-white text-center font-semibold text-xs">Open Full Map</Text>
                     </TouchableOpacity>
                   </View>
@@ -604,7 +762,7 @@ export default function VolunteerAnalysis() {
                   <ScrollView horizontal className="border border-gray-200 rounded-xl">
                     <View>
                       <View className="flex-row bg-gray-100 border-b border-gray-200">
-                        {["Ward", "Name", "EPIC", "Booth", "Updated By", "Agent Phone", "Updated At"].map((h) => (
+                        {["Ward", "Voter Name", "Voter EPIC", "Booth", "Voter Number", "Gender", "Age", "Voter Mobile", "Agent Name", "Agent Number", "Updated At"].map((h) => (
                           <Text key={h} className="w-28 p-2 text-xs font-bold text-gray-700">{h}</Text>
                         ))}
                       </View>
@@ -614,6 +772,10 @@ export default function VolunteerAnalysis() {
                           <Text className="w-28 p-2 text-xs text-gray-700">{r.name || [r.firstMiddleNameEn, r.lastNameEn].filter(Boolean).join(" ") || "-"}</Text>
                           <Text className="w-28 p-2 text-xs text-gray-700">{r.epicNo || r.epic || "-"}</Text>
                           <Text className="w-28 p-2 text-xs text-gray-700">{r.boothNo || "-"}</Text>
+                          <Text className="w-24 p-2 text-xs text-gray-700">{r.voterSerialNo ?? "-"}</Text>
+                          <Text className="w-24 p-2 text-xs text-gray-700">{r.gender || "-"}</Text>
+                          <Text className="w-20 p-2 text-xs text-gray-700">{r.age ?? "-"}</Text>
+                          <Text className="w-28 p-2 text-xs text-gray-700">{r.mobile || "-"}</Text>
                           <Text className="w-28 p-2 text-xs text-gray-700">{r.updatedByName || "-"}</Text>
                           <Text className="w-28 p-2 text-xs text-gray-700">{r.updatedByPhone || "-"}</Text>
                           <Text className="w-40 p-2 text-xs text-gray-700">{formatDateTime(r.lastUpdatedAt)}</Text>

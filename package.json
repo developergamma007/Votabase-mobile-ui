@@ -7,6 +7,10 @@
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
+    "build:android:release": "cd android && ./gradlew assembleRelease",
+    "build:android:bundle": "cd android && ./gradlew bundleRelease",
+    "release:android": "bash scripts/release-android.sh",
+    "release:ios:archive": "bash scripts/release-ios-archive.sh",
     "test": "jest"
   },
   "dependencies": {

@@ -11,7 +11,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>votabase</string>
+	<string>Votabase</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -47,6 +47,13 @@
       <key>NSThirdPartyExceptionRequiresForwardSecrecy</key>
       <false/>
     </dict>
+    <key>votabase.iswot.in</key>
+    <dict>
+      <key>NSIncludesSubdomains</key>
+      <true/>
+      <key>NSExceptionRequiresForwardSecrecy</key>
+      <false/>
+    </dict>
     <key>localhost</key>
     <dict>
       <key>NSIncludesSubdomains</key>
@@ -67,6 +74,8 @@
     </dict>
   </dict>
 	</dict>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Votabase uses your photo library so you can choose a profile picture.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 <string>Your location is used to show your position on map.</string>
 <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

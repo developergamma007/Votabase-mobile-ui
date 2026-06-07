@@ -1,10 +1,12 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, ActivityIndicator } from 'react-native';
-import { CRUDAPI, getAssemblyCode, GOOGLE_MAPS_API_KEY } from '../../apis/Api';
-import { GetCurrentLocation } from '../../components/GetCurrentLocation';
+import { CRUDAPI, getAssemblyCode } from '../../apis/Api';
+import { buildOsmWebViewHtml } from '../../config/osmMap';
+import { ACCURATE_GPS_OPTIONS, GetCurrentLocation } from '../../components/GetCurrentLocation';
 import { WebView } from 'react-native-webview';
 import DropDownPicker from 'react-native-dropdown-picker';
 import { AuthContext } from '../../context/AuthContext';
+import FeatureComingSoon, { isVotabaseSuperAdmin } from '../../components/FeatureComingSoon';
 
 const RECIPIENTS = [
   { key: 'assembly', label: 'Assembly' },
@@ -131,13 +133,13 @@ export default function Meetings() {
 
   const selectedMeetingMapHtml = useMemo(() => {
     if (!selectedMeeting?.latitude || !selectedMeeting?.longitude) return '';
-    return `<!doctype html><html><head><meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" /><style>html,body,#map{margin:0;padding:0;width:100%;height:100%;}</style></head><body><div id="map"></div><script>function initMap(){var p={lat:${Number(selectedMeeting.latitude)},lng:${Number(selectedMeeting.longitude)}};var m=new google.maps.Map(document.getElementById('map'),{zoom:15,center:p});new google.maps.Marker({position:p,map:m});}</script><script async defer src="https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap"></script></body></html>`;
+    return buildOsmWebViewHtml(selectedMeeting.latitude, selectedMeeting.longitude, { zoom: 15 });
   }, [selectedMeeting]);
 
   const newMeetingMapHtml = useMemo(() => {
     const lat = Number(newMeeting.latitude || 12.9716);
     const lng = Number(newMeeting.longitude || 77.5946);
-    return `<!doctype html><html><head><meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" /><style>html,body,#map{margin:0;padding:0;width:100%;height:100%;}</style></head><body><div id="map"></div><script>function initMap(){var p={lat:${lat},lng:${lng}};var m=new google.maps.Map(document.getElementById('map'),{zoom:14,center:p});new google.maps.Marker({position:p,map:m});}</script><script async defer src="https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap"></script></body></html>`;
+    return buildOsmWebViewHtml(lat, lng, { zoom: 14, draggable: true, clickable: true });
   }, [newMeeting.latitude, newMeeting.longitude]);
 
   const handleSaveMeeting = async () => {
@@ -205,7 +207,7 @@ export default function Meetings() {
       let lat: number | null = null;
       let lng: number | null = null;
       try {
-        const pos: any = await GetCurrentLocation();
+        const pos: any = await GetCurrentLocation(ACCURATE_GPS_OPTIONS);
         lat = Number(pos?.latitude);
         lng = Number(pos?.longitude);
       } catch {
@@ -224,7 +226,7 @@ export default function Meetings() {
 
   const handleUseMyLocation = async () => {
     try {
-      const pos: any = await GetCurrentLocation();
+      const pos: any = await GetCurrentLocation(ACCURATE_GPS_OPTIONS);
       setNewMeeting((prev) => ({
         ...prev,
         latitude: Number(pos?.latitude || 0).toFixed(6),
@@ -234,6 +236,10 @@ export default function Meetings() {
       // ignore
     }
   };
+
+  if (!isVotabaseSuperAdmin(userInfo)) {
+    return <FeatureComingSoon />;
+  }
 
   return (
     <View className="flex-1 bg-[#EEF3FB]">
@@ -422,7 +428,27 @@ export default function Meetings() {
               <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3 text-[13px]" placeholder="100" value={newMeeting.radius} onChangeText={(v) => setNewMeeting((p) => ({ ...p, radius: v }))} keyboardType="numeric" />
 
               <View className="h-52 mt-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-                <WebView source={{ html: newMeetingMapHtml }} originWhitelist={['*']} javaScriptEnabled domStorageEnabled scrollEnabled={false} />
+                <WebView
+                  source={{ html: newMeetingMapHtml }}
+                  originWhitelist={['*']}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  scrollEnabled={false}
+                  onMessage={(event) => {
+                    try {
+                      const data = JSON.parse(event.nativeEvent.data);
+                      if (data?.type === 'position' && Number.isFinite(data.lat) && Number.isFinite(data.lng)) {
+                        setNewMeeting((prev) => ({
+                          ...prev,
+                          latitude: Number(data.lat).toFixed(6),
+                          longitude: Number(data.lng).toFixed(6),
+                        }));
+                      }
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                />
               </View>
 
               <View className="flex-row mt-3 gap-3">

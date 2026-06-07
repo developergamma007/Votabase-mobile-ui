@@ -14,6 +14,7 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import DropDownPicker from "react-native-dropdown-picker";
 import { AuthContext } from "../../context/AuthContext";
 import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
+import { isProtectedVolunteerLogin } from "../../helpers/volunteerLoginHelpers";
 
 export default function AddVolunteer() {
     const navigation = useNavigation();
@@ -49,21 +50,64 @@ export default function AddVolunteer() {
     const prevAssemblyRef = useRef<string | null>(null);
 
     const accessWardIds = useMemo(() => {
-        const ids = String(userInfo?.assignmentId || '').split(',').map((id) => id.trim()).filter(Boolean);
-        return ids;
+        const ids: string[] = [];
+        if (Array.isArray(userInfo?.wardIds)) {
+            userInfo.wardIds.forEach((id: any) => {
+                if (id != null && String(id).trim() !== '') ids.push(String(id).trim());
+            });
+        }
+        const assignmentType = String(userInfo?.assignmentType || userInfo?.assignment_type || '').toUpperCase();
+        if (assignmentType === 'WARD' && userInfo?.assignmentId) {
+            String(userInfo.assignmentId)
+                .split(',')
+                .map((id: string) => id.trim())
+                .filter(Boolean)
+                .forEach((id: string) => ids.push(id));
+        }
+        return Array.from(new Set(ids));
     }, [userInfo]);
 
-    const levelOptions = [
-        { label: 'Assembly', value: 'ASSEMBLY' },
-        { label: 'Ward', value: 'WARD' },
-        { label: 'Booth', value: 'BOOTH' },
-    ];
+    const [resolvedAssemblyId, setResolvedAssemblyId] = useState('');
+
+    const creatorRole = useMemo(() => {
+        const r = String(userInfo?.role || '').replace('ROLE_', '').toUpperCase();
+        const assignmentType = String(userInfo?.assignmentType || userInfo?.assignment_type || '').toUpperCase();
+        if (r === 'SUPER_ADMIN' || r === 'ADMIN') return r;
+        if (assignmentType === 'ASSEMBLY' || assignmentType === 'WARD') return assignmentType;
+        return r;
+    }, [userInfo]);
+
+    const creatorAssemblyId = useMemo(() => {
+        if (resolvedAssemblyId) return resolvedAssemblyId;
+        const fromList = userInfo?.assemblyIds?.[0] ?? userInfo?.assemblyId ?? userInfo?.assembly_id;
+        if (fromList != null && String(fromList).trim() !== '') return String(fromList);
+        if (creatorRole === 'ASSEMBLY' && userInfo?.assignmentId) {
+            return String(userInfo.assignmentId).split(',')[0].trim();
+        }
+        if (creatorRole === 'SUPER_ADMIN' || creatorRole === 'ADMIN') {
+            return getAssemblyCode() || '';
+        }
+        return '';
+    }, [userInfo, creatorRole, resolvedAssemblyId]);
+
+    const levelOptions = useMemo(() => {
+        const all = [
+            { label: 'Assembly', value: 'ASSEMBLY' },
+            { label: 'Ward', value: 'WARD' },
+            { label: 'Booth', value: 'BOOTH' },
+        ];
+        if (creatorRole === 'ASSEMBLY') return all.filter((item) => item.value !== 'ASSEMBLY');
+        if (creatorRole === 'WARD') return all.filter((item) => item.value === 'BOOTH');
+        return all;
+    }, [creatorRole]);
+
+    const lockAssemblyPicker = creatorRole === 'ASSEMBLY' || creatorRole === 'WARD';
 
     // Load edit data if provided in params or AsyncStorage
     useEffect(() => {
         const checkEdit = async () => {
             const params: any = route.params;
-            let volunteerData = params?.volunteer;
+            let volunteerData = params?.volunteer ?? params?.editVolunteer;
             
             if (!volunteerData) {
                 const raw = await AsyncStorage.getItem('volunteerEdit');
@@ -90,6 +134,52 @@ export default function AddVolunteer() {
     }, [route.params]);
 
     useEffect(() => {
+        if (pendingEditRef.current || isEditing) return;
+        if (creatorRole === 'WARD' && form.workingLevel !== 'BOOTH') {
+            setForm((prev) => ({ ...prev, workingLevel: 'BOOTH', wardIds: [], boothIds: [] }));
+        } else if (creatorRole === 'ASSEMBLY' && form.workingLevel === 'ASSEMBLY') {
+            setForm((prev) => ({ ...prev, workingLevel: 'WARD', wardIds: [], boothIds: [] }));
+        }
+    }, [creatorRole, isEditing, form.workingLevel]);
+
+    useEffect(() => {
+        if (!creatorAssemblyId || pendingEditRef.current) return;
+        if (creatorRole === 'ASSEMBLY' || creatorRole === 'WARD') {
+            setForm((prev) => (
+                prev.assemblyId && String(prev.assemblyId) === String(creatorAssemblyId)
+                    ? prev
+                    : { ...prev, assemblyId: String(creatorAssemblyId) }
+            ));
+        }
+    }, [creatorRole, creatorAssemblyId]);
+
+    useEffect(() => {
+        const fromProfile = userInfo?.assemblyIds?.[0] ?? userInfo?.assemblyId ?? userInfo?.assembly_id;
+        if (fromProfile != null && String(fromProfile).trim() !== '') {
+            setResolvedAssemblyId(String(fromProfile));
+            return;
+        }
+        if (creatorRole !== 'WARD' && creatorRole !== 'ASSEMBLY') return;
+        if (!accessWardIds.length) return;
+
+        let cancelled = false;
+        CRUDAPI.fetchWards().then((res: any) => {
+            if (cancelled) return;
+            const raw = Array.isArray(res) ? res : (res?.data?.result || res?.result || res?.wards || []);
+            const wardSet = new Set(accessWardIds.map(String));
+            const match = raw.find((item: any) => {
+                const id = item.wardId ?? item.ward_id ?? item.id;
+                return wardSet.has(String(id));
+            });
+            const asm = match?.assemblyId ?? match?.assembly_id ?? match?.assemblyNo ?? match?.assembly_no;
+            if (asm != null && String(asm).trim() !== '') {
+                setResolvedAssemblyId(String(asm));
+            }
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [userInfo, creatorRole, accessWardIds]);
+
+    useEffect(() => {
         const fetchDropdowns = async () => {
             try {
                 const res = await CRUDAPI.getAssemblyDropdown();
@@ -112,10 +202,16 @@ export default function AddVolunteer() {
     useEffect(() => {
         if (pendingEditRef.current) return;
         if (prevWorkingLevelRef.current !== null && prevWorkingLevelRef.current !== form.workingLevel) {
-            setForm((prev) => ({ ...prev, assemblyId: '', wardIds: [], boothIds: [] }));
+            const keepAssembly = (creatorRole === 'ASSEMBLY' || creatorRole === 'WARD') && creatorAssemblyId;
+            setForm((prev) => ({
+                ...prev,
+                assemblyId: keepAssembly ? String(creatorAssemblyId) : '',
+                wardIds: [],
+                boothIds: [],
+            }));
             setWards([]);
             setBooths([]);
-            prevAssemblyRef.current = null;
+            prevAssemblyRef.current = keepAssembly ? String(creatorAssemblyId) : null;
         }
         prevWorkingLevelRef.current = form.workingLevel;
     }, [form.workingLevel]);
@@ -186,6 +282,11 @@ export default function AddVolunteer() {
                     } else {
                         pendingEditRef.current = null;
                     }
+                } else if (creatorRole === 'WARD' && accessWardIds.length) {
+                    const validWardIds = accessWardIds.filter((id) => list.some((item: any) => String(item.value) === String(id)));
+                    if (validWardIds.length) {
+                        setForm((prev) => ({ ...prev, wardIds: validWardIds, boothIds: [] }));
+                    }
                 }
             } catch (err) {
                 console.log("Wards load error", err);
@@ -193,7 +294,7 @@ export default function AddVolunteer() {
             }
         };
         loadWards();
-    }, [form.workingLevel, form.assemblyId]);
+    }, [form.workingLevel, form.assemblyId, creatorRole, accessWardIds]);
 
     // Load Booths
     useEffect(() => {
@@ -237,6 +338,13 @@ export default function AddVolunteer() {
         };
         loadBooths();
     }, [form.wardIds]);
+
+    useEffect(() => {
+        if (creatorRole !== 'WARD' || form.workingLevel !== 'BOOTH' || pendingEditRef.current) return;
+        if (form.wardIds.length === 0 && accessWardIds.length === 1) {
+            setForm((prev) => ({ ...prev, wardIds: [accessWardIds[0]] }));
+        }
+    }, [creatorRole, form.workingLevel, accessWardIds, form.wardIds.length, wards.length]);
 
     const handleWardSelection = (val: any) => {
         let selected: string[];
@@ -326,7 +434,17 @@ export default function AddVolunteer() {
         return null;
     };
 
+    const protectedLoginReadOnly = isEditing && isProtectedVolunteerLogin(form);
+
     const handleSubmit = async () => {
+        if (isEditing && isProtectedVolunteerLogin(form)) {
+            setBanner({
+                type: 'error',
+                message: 'Super Admin logins cannot be updated here. Contact a platform administrator.',
+            });
+            return;
+        }
+
         const assignment = resolveAssignment();
         if (!assignment) {
             setBanner({ type: 'error', message: 'Please complete the assignment selection.' });
@@ -391,7 +509,15 @@ export default function AddVolunteer() {
                     </View>
 
                     <View style={styles.field}>
-                        <Text style={styles.label}>Working Level *</Text>
+                        <Text style={styles.label}>
+                            Working Level *
+                            {creatorRole === 'ASSEMBLY' ? (
+                                <Text style={styles.labelHint}> (You can assign Ward or Booth volunteers only)</Text>
+                            ) : null}
+                            {creatorRole === 'WARD' ? (
+                                <Text style={styles.labelHint}> (You can assign Booth volunteers only)</Text>
+                            ) : null}
+                        </Text>
                         <DropDownPicker
                             open={openLevel}
                             value={form.workingLevel}
@@ -402,23 +528,36 @@ export default function AddVolunteer() {
                             dropDownContainerStyle={styles.dropdownPanel}
                             listMode="SCROLLVIEW"
                             zIndex={4000}
+                            disabled={creatorRole === 'WARD' && levelOptions.length === 1}
                         />
                     </View>
 
                     <View style={styles.field}>
                         <Text style={styles.label}>Assembly *</Text>
-                        <DropDownPicker
-                            open={openAsm}
-                            value={form.assemblyId}
-                            items={assemblies}
-                            setOpen={setOpenAsm}
-                            setValue={v => handleChange('assemblyId', v(form.assemblyId))}
-                            placeholder="Select Assembly"
-                            style={styles.dropdown}
-                            dropDownContainerStyle={styles.dropdownPanel}
-                            listMode="SCROLLVIEW"
-                            zIndex={3000}
-                        />
+                        {lockAssemblyPicker ? (
+                            <TextInput
+                                style={[styles.input, styles.disabledInput]}
+                                value={
+                                    assemblies.find((a) => String(a.value) === String(form.assemblyId))?.label
+                                    || creatorAssemblyId
+                                    || 'Assembly'
+                                }
+                                editable={false}
+                            />
+                        ) : (
+                            <DropDownPicker
+                                open={openAsm}
+                                value={form.assemblyId}
+                                items={assemblies}
+                                setOpen={setOpenAsm}
+                                setValue={v => handleChange('assemblyId', v(form.assemblyId))}
+                                placeholder="Select Assembly"
+                                style={styles.dropdown}
+                                dropDownContainerStyle={styles.dropdownPanel}
+                                listMode="SCROLLVIEW"
+                                zIndex={3000}
+                            />
+                        )}
                     </View>
 
                     <View style={styles.field}>
@@ -524,13 +663,18 @@ export default function AddVolunteer() {
                             <Text style={styles.resetBtnText}>Reset</Text>
                         </TouchableOpacity>
                         <TouchableOpacity 
-                            style={[styles.submitBtn, saving && styles.disabledBtn]} 
+                            style={[styles.submitBtn, (saving || protectedLoginReadOnly) && styles.disabledBtn]} 
                             onPress={handleSubmit}
-                            disabled={saving}
+                            disabled={saving || protectedLoginReadOnly}
                         >
                             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{isEditing ? 'Update' : 'Submit'}</Text>}
                         </TouchableOpacity>
                     </View>
+                    {protectedLoginReadOnly ? (
+                        <Text style={styles.readOnlyHint}>
+                            Super Admin logins are read-only here. Contact a platform administrator to change these accounts.
+                        </Text>
+                    ) : null}
                 </View>
             </ScrollView>
         </View>
@@ -576,6 +720,18 @@ const styles = StyleSheet.create({
         color: "#64748B",
         textTransform: "uppercase",
         letterSpacing: 0.5,
+    },
+    hint: {
+        marginTop: 6,
+        fontSize: 12,
+        color: "#64748B",
+    },
+    labelHint: {
+        fontSize: 11,
+        fontWeight: "500",
+        color: "#64748B",
+        textTransform: "none",
+        letterSpacing: 0,
     },
     checkboxRow: {
         flexDirection: "row",
@@ -712,5 +868,11 @@ const styles = StyleSheet.create({
     },
     disabledBtn: {
         backgroundColor: "#94A3B8",
+    },
+    readOnlyHint: {
+        marginTop: 12,
+        fontSize: 13,
+        color: "#64748B",
+        lineHeight: 18,
     },
 });

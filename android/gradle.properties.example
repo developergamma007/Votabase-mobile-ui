@@ -1,0 +1,15 @@
+# Copy to android/gradle.properties (or merge with existing values).
+# Never commit real upload keystore passwords to git.
+
+org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m
+android.useAndroidX=true
+reactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64
+newArchEnabled=true
+hermesEnabled=true
+edgeToEdgeEnabled=false
+
+# Release signing — required for Play Store AAB
+MYAPP_UPLOAD_STORE_FILE=votabase-upload-key.keystore
+MYAPP_UPLOAD_KEY_ALIAS=votabase-key-alias
+MYAPP_UPLOAD_STORE_PASSWORD=REPLACE_ME
+MYAPP_UPLOAD_KEY_PASSWORD=REPLACE_ME

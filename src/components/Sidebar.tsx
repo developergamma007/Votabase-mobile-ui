@@ -1,5 +1,5 @@
 // SidebarModal.js
-import React, { useRef, useEffect, useContext, useMemo, useState } from 'react';
+import React, { useRef, useEffect, useContext, useMemo } from 'react';
 import {
     Animated,
     View,
@@ -15,7 +15,6 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
-import { CRUDAPI } from '../apis/Api';
 
 const { width } = Dimensions.get('window');
 
@@ -29,18 +28,9 @@ function isExitItem(item: MenuItem): item is ExitMenuItem {
   return 'isExit' in item && item.isExit === true;
 }
 
-const ALL_MENU_ITEMS: RouteMenuItem[] = [
-    { label: 'Search Voter', icon: 'search-outline', route: 'Search Voter' },
-    { label: 'Search Booth', icon: 'location-outline', route: 'Search Booth' },
-    { label: "Voter's Family", icon: 'people-outline', route: 'boothForFamily' },
-    { label: 'Meetings', icon: 'calendar-outline', route: 'meetings' },
-    { label: 'Poll Day', icon: 'checkbox-outline', route: 'pollDay' },
-    { label: 'Print', icon: 'print-outline', route: 'print' },
-    { label: 'Add Volunteer', icon: 'person-add-outline', route: 'addVolunteer' },
-    { label: 'Manage Volunteers', icon: 'people-outline', route: 'myVolunteers' },
-    { label: 'Volunteer Analysis', icon: 'bar-chart-outline', route: 'volunteerAnalysis' },
-    { label: 'Promotions', icon: 'megaphone-outline', route: 'promotions' },
-    { label: 'Logs', icon: 'document-text-outline', route: 'Logs' },
+const SIDEBAR_MENU_ITEMS: RouteMenuItem[] = [
+    { label: 'Home', icon: 'home-outline', route: 'Home' },
+    { label: 'Latest work', icon: 'time-outline', route: 'Logs' },
     { label: 'Settings', icon: 'settings-outline', route: 'Settings' },
 ];
 
@@ -48,11 +38,6 @@ export default function SidebarModal({ visible, onClose }: SidebarProps) {
     const { logout, userInfo } = useContext(AuthContext);
     const navigation = useNavigation();
     const slideAnim = useRef(new Animated.Value(-width)).current;
-    const [printEnabled, setPrintEnabled] = useState(true);
-
-    const role = String((userInfo as any)?.role || '')
-        .replace(/^ROLE_/, '')
-        .toUpperCase();
 
     useEffect(() => {
         Animated.timing(slideAnim, {
@@ -62,45 +47,13 @@ export default function SidebarModal({ visible, onClose }: SidebarProps) {
         }).start();
     }, [visible]);
 
-    useEffect(() => {
-        if (role && role !== 'BOOTH') {
-            CRUDAPI.fetchMessageTemplate(null, 'PRINT')
-                .then((res) => {
-                    const enabled = res?.data?.result?.enabled;
-                    if (enabled !== undefined) setPrintEnabled(enabled);
-                })
-                .catch(() => setPrintEnabled(true));
-        }
-    }, [role]);
-
-    const menuItems = useMemo(() => {
-        let items = ALL_MENU_ITEMS;
-
-        if (role === 'BOOTH') {
-            items = items.filter((item) =>
-                !['addVolunteer', 'myVolunteers'].includes(item.route)
-            );
-        }
-
-        if (role !== 'SUPER_ADMIN') {
-            items = items.filter((item) => item.route !== 'promotions');
-        }
-
-        if (!['SUPER_ADMIN', 'ADMIN', 'WARD', 'BOOTH', 'USER'].includes(role)) {
-            items = items.filter((item) => !['boothForFamily', 'meetings'].includes(item.route));
-        }
-
-        if (!printEnabled && role !== 'SUPER_ADMIN') {
-            items = items.filter((item) => item.route !== 'print');
-        }
-
-        const withHome: MenuItem[] = [
-            { label: 'Home', icon: 'home-outline', route: 'Home' },
-            ...items,
+    const menuItems = useMemo<MenuItem[]>(
+        () => [
+            ...SIDEBAR_MENU_ITEMS,
             { label: 'Exit', icon: 'exit-outline', action: logout, isExit: true },
-        ];
-        return withHome;
-    }, [role, printEnabled, logout]);
+        ],
+        [logout]
+    );
 
     const displayName =
         (userInfo as any)?.name ||

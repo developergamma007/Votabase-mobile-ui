@@ -4,6 +4,7 @@ import Icon from "react-native-vector-icons/MaterialIcons";
 import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
 import { AuthContext } from "../../context/AuthContext";
 import DropDownPicker from "react-native-dropdown-picker";
+import FeatureComingSoon, { isVotabaseSuperAdmin } from "../../components/FeatureComingSoon";
 
 const POLL_PAGE_SIZE = 100;
 
@@ -48,7 +49,7 @@ export default function PollDayVoters() {
   ]);
 
   const pollSearchTimerRef = useRef<any>(null);
-  const isSuperAdmin = userInfo?.userName === "admin@iswot.io" || userInfo?.role === "SUPER_ADMIN";
+  const isSuperAdmin = isVotabaseSuperAdmin(userInfo);
 
   useEffect(() => {
     const init = async () => {
@@ -263,6 +264,10 @@ export default function PollDayVoters() {
       item === "ALL" ? pollTabCounts.all : item === "VOTED" ? pollTabCounts.voted : pollTabCounts.notVoted;
     return `${item} (${count})`;
   };
+
+  if (!isVotabaseSuperAdmin(userInfo)) {
+    return <FeatureComingSoon />;
+  }
 
   return (
     <View className="flex-1 bg-[#EEF3FB]">

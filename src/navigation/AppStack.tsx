@@ -201,7 +201,7 @@ export default function AppStack() {
         <Stack.Screen name="Search Booth" component={SearchBooth} options={{ title: 'Search Booth' }} />
         <Stack.Screen name="Voter Info" component={VoterDetails} options={{ title: "Voter Profile" }} />
         <Stack.Screen name="Profile" component={MyProfile} options={{ title: "My Profile", headerRight: () => null }} />
-        <Stack.Screen name="Logs" component={Logs} options={{ title: "Activity Logs" }} />
+        <Stack.Screen name="Logs" component={Logs} options={{ title: 'Latest work' }} />
         <Stack.Screen name="Settings" component={Settings} options={{ title: "App Settings" }} />
         <Stack.Screen name="addVolunteer" component={AddVolunteer} options={{ title: "Add Volunteer" }} />
         <Stack.Screen name="myVolunteers" component={MyVolunteers} options={{ title: "Manage Volunteers" }} />

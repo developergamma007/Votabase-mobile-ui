@@ -11,12 +11,14 @@ import {
     FlatList,
     StyleSheet,
     Platform,
+    Alert,
 } from "react-native";
 import DropDownPicker from "react-native-dropdown-picker";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
+import { CRUDAPI, ensureUserProfileReady, getAssemblyCode, parseVoterSearchResponse } from "../../apis/Api";
 import { premium } from "../../constants/premiumTheme";
 import { PrinterHelper } from "../../components/PrinterHelper";
+import { openVoterInfoWithQuickLocation } from "../../helpers/voterLocationNavigation";
 
 const PAGE_SIZE = 50;
 
@@ -46,6 +48,7 @@ export default function SearchVoter() {
     const [assemblyItems, setAssemblyItems] = useState<any[]>([]);
 
     const [searching, setSearching] = useState(false);
+    const [isLocating, setIsLocating] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
     const [voterResults, setVoterResults] = useState<any[]>([]);
     const [resultMeta, setResultMeta] = useState<any>(null);
@@ -54,12 +57,15 @@ export default function SearchVoter() {
     const [errorText, setErrorText] = useState("");
     const [localSearch, setLocalSearch] = useState("");
     const [boothMap, setBoothMap] = useState<Record<string, string>>({});
+    const [sessionReady, setSessionReady] = useState(false);
 
     /* -------------------- INIT -------------------- */
     useEffect(() => {
         const init = async () => {
+            await ensureUserProfileReady();
             const currentAsm = await getAssemblyCode();
             setForm(prev => ({ ...prev, assemblyCode: currentAsm }));
+            setSessionReady(true);
 
             // Load Wards & Assembly Info
             const liteData = await AsyncStorage.getItem(BOOTH_CACHE_KEY);
@@ -150,8 +156,10 @@ export default function SearchVoter() {
     };
 
     const runSearch = async (nextPage = 0) => {
+        await ensureUserProfileReady();
+        const assemblyCode = form.assemblyCode || await getAssemblyCode();
         const response = await CRUDAPI.searchVoters({
-            assemblyCode: form.assemblyCode,
+            assemblyCode,
             searchQuery: form.searchQuery,
             wardId: form.wards || undefined,
             boothNumber: form.boothNumber,
@@ -163,8 +171,7 @@ export default function SearchVoter() {
             size: PAGE_SIZE,
         });
 
-        const nextResults = response?.data?.result || [];
-        const meta = response?.data?.meta || {};
+        const { results: nextResults, meta } = parseVoterSearchResponse(response);
 
         setResultMeta(meta);
         setHasMore(Boolean(meta?.hasMore));
@@ -177,6 +184,16 @@ export default function SearchVoter() {
         setSearching(true);
         setErrorText("");
         try {
+            await ensureUserProfileReady();
+            const assemblyCode = form.assemblyCode || await getAssemblyCode();
+            if (!assemblyCode) {
+                setErrorText("Assembly is not configured for this login.");
+                return;
+            }
+            if (!form.assemblyCode) {
+                setForm((prev) => ({ ...prev, assemblyCode }));
+            }
+            setSessionReady(true);
             await runSearch(0);
         } catch (error: any) {
             setErrorText(error?.message || "Search failed");
@@ -252,8 +269,19 @@ export default function SearchVoter() {
         return (
             <TouchableOpacity
                 style={[styles.premiumCard, { borderLeftColor: primaryColor }]}
-                onPress={() => navigation.navigate("Voter Info" as any, { voter: item })}
+                onPress={async () => {
+                    if (isLocating) return;
+                    setIsLocating(true);
+                    await openVoterInfoWithQuickLocation(
+                        navigation as any,
+                        item,
+                        booth,
+                        (msg) => Alert.alert("Location required", msg),
+                    );
+                    setIsLocating(false);
+                }}
                 activeOpacity={0.95}
+                disabled={isLocating}
             >
                 <View style={styles.cardBody}>
                     {/* Top Row: Index & EPIC */}

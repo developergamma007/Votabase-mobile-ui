@@ -3,7 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CACHE_PREFIX = 'vb_cache';
 const memoryCache = new Map();
-export const GOOGLE_MAPS_API_KEY = 'AIzaSyDiHCsapzJETTnhBIC7hFhTwmlWJJfnEg0';
+export {
+  getOsmEmbedUrl,
+  getOsmExternalUrl,
+  buildOsmWebViewHtml,
+  buildFamilyPointsOsmWebViewHtml,
+  buildVolunteerPointsOsmWebViewHtml,
+} from '../config/osmMap';
 
 const getApiToken = async () => {
     try {
@@ -25,6 +31,57 @@ export const getAssemblyCode = async () => {
         return '000000000151';
     }
 };
+
+function userHasAssignmentScope(user = {}) {
+    const role = String(user.role || '').replace('ROLE_', '').toUpperCase();
+    if (['SUPER_ADMIN', 'ADMIN'].includes(role)) return true;
+    if (Array.isArray(user.wardIds) && user.wardIds.length > 0) return true;
+    if (Array.isArray(user.boothIds) && user.boothIds.length > 0) return true;
+    if (Array.isArray(user.assemblyIds) && user.assemblyIds.length > 0) return true;
+    if (user.wardId != null && String(user.wardId).trim() !== '') return true;
+    if (user.boothId != null && String(user.boothId).trim() !== '') return true;
+    if (user.assignmentId != null && String(user.assignmentId).trim() !== '') return true;
+    return false;
+}
+
+let profileBootstrapPromise = null;
+
+export async function ensureUserProfileReady() {
+    try {
+        const raw = await AsyncStorage.getItem('userInfo');
+        const cached = raw ? JSON.parse(raw) : {};
+        if (!cached?.token) return cached;
+        if (userHasAssignmentScope(cached)) return cached;
+        if (!profileBootstrapPromise) {
+            profileBootstrapPromise = apiClient.get('/votebase/v1/api/me')
+                .then((res) => {
+                    const updated = res?.data?.data?.result || res?.data?.result || res?.data || res;
+                    if (updated && typeof updated === 'object') {
+                        const merged = { ...cached, ...updated };
+                        AsyncStorage.setItem('userInfo', JSON.stringify(merged));
+                        return merged;
+                    }
+                    return cached;
+                })
+                .catch(() => cached)
+                .finally(() => {
+                    profileBootstrapPromise = null;
+                });
+        }
+        return profileBootstrapPromise;
+    } catch {
+        return {};
+    }
+}
+
+export function parseVoterSearchResponse(payload) {
+    const data = payload?.data ?? payload ?? {};
+    const results = Array.isArray(data?.result)
+        ? data.result
+        : (Array.isArray(data) ? data : (Array.isArray(payload?.result) ? payload.result : []));
+    const meta = data?.meta ?? payload?.meta ?? {};
+    return { results, meta };
+}
 
 const getCached = async (suffix) => {
     const userId = 'user'; // Simplified for mobile cache
@@ -227,6 +284,46 @@ export const CRUDAPI = {
         }
     },
 
+    blockVolunteer: async (jsonReq) => {
+        try {
+            const response = await apiClient.put('/votebase/v1/api/user/block', jsonReq);
+            return response.data;
+        } catch (error) {
+            console.log('Error while blocking volunteer:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    removeVolunteer: async (jsonReq) => {
+        try {
+            const response = await apiClient.put('/votebase/v1/api/user/delete', jsonReq);
+            return response.data;
+        } catch (error) {
+            console.log('Error while deleting volunteer:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    bulkRemoveVolunteer: async (jsonReq) => {
+        try {
+            const response = await apiClient.put('/votebase/v1/api/user/delete/bulk', jsonReq);
+            return response.data;
+        } catch (error) {
+            console.log('Error while bulk deleting volunteers:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    bulkBlockVolunteer: async (jsonReq) => {
+        try {
+            const response = await apiClient.put('/votebase/v1/api/user/block/bulk', jsonReq);
+            return response.data;
+        } catch (error) {
+            console.log('Error while bulk blocking volunteers:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
     fetchVolunteerDropdown: async (level, parentId) => {
         try {
             const params = { level };
@@ -263,11 +360,12 @@ export const CRUDAPI = {
         }
     },
 
-    fetchVolunteerAnalysis: async (wardId, mode) => {
+    fetchVolunteerAnalysis: async (wardId, mode, assemblyCode) => {
         try {
             const params = {};
             if (wardId) params.wardId = wardId;
             if (mode) params.mode = mode;
+            if (assemblyCode) params.assemblyCode = assemblyCode;
             const response = await apiClient.get('/votebase/v1/api/volunteers/analysis', { params });
             return response.data;
         } catch (error) {
@@ -276,9 +374,10 @@ export const CRUDAPI = {
         }
     },
 
-    fetchVolunteerEnrichmentDetails: async (wardId, updatedFrom, updatedTo, page, size) => {
+    fetchVolunteerEnrichmentDetails: async (wardId, updatedFrom, updatedTo, page, size, assemblyCode) => {
         try {
             const params = { wardId, updatedFrom, updatedTo, page, size };
+            if (assemblyCode) params.assemblyCode = assemblyCode;
             const response = await apiClient.get('/votebase/v1/api/volunteers/analysis/enrichment', { params });
             return response.data;
         } catch (error) {
@@ -287,9 +386,11 @@ export const CRUDAPI = {
         }
     },
 
-    fetchVolunteerLocationPoints: async (wardId) => {
+    fetchVolunteerLocationPoints: async (wardId, assemblyCode) => {
         try {
-            const params = wardId ? { wardId } : {};
+            const params = {};
+            if (wardId) params.wardId = wardId;
+            if (assemblyCode) params.assemblyCode = assemblyCode;
             const response = await apiClient.get('/votebase/v1/api/volunteers/analysis/locations', { params });
             return response.data;
         } catch (error) {
@@ -298,18 +399,76 @@ export const CRUDAPI = {
         }
     },
 
-    fetchFamilyLocationPoints: async (wardId) => {
+    fetchFamilyAnalysis: async (wardId, mode, assemblyCode) => {
         try {
-            const response = await apiClient.get('/votebase/v1/api/family', { params: { page: 0, size: 500 } });
-            const payload = response?.data?.content || response?.data?.result || response?.data || [];
-            const list = Array.isArray(payload) ? payload : [];
-            const ward = wardId ? String(wardId) : '';
-            const filtered = ward
-                ? list.filter((item) => String(item?.wardId ?? item?.wardCode ?? item?.ward_id ?? '').trim() === ward)
-                : list;
-            return { data: { result: filtered } };
+            const params = {};
+            if (wardId) params.wardId = wardId;
+            if (mode) params.mode = mode;
+            if (assemblyCode && !wardId) params.assemblyCode = assemblyCode;
+            const response = await apiClient.get('/votebase/v1/api/families/analysis', { params });
+            return response.data;
         } catch (error) {
-            console.log('Error while fetching family map locations:', error.response?.data || error.message);
+            console.log('Error while fetching family analysis:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    fetchFamilyLocationPoints: async (wardId, assemblyCode, boothId) => {
+        const filterPoints = (rows, { trustServerWardScope = false } = {}) =>
+            (Array.isArray(rows) ? rows : []).filter((item) => {
+                const lat = Number(item?.latitude);
+                const lng = Number(item?.longitude);
+                if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return false;
+                if (trustServerWardScope) return true;
+                const wardIdStr = wardId ? String(wardId) : '';
+                if (!wardIdStr) return true;
+                const itemWardId = String(item?.wardId ?? item?.ward_id ?? '').trim();
+                const itemWardCode = String(item?.wardCode ?? item?.ward_code ?? '').trim();
+                if (itemWardId === wardIdStr) return true;
+                return false;
+            });
+        try {
+            const params = {};
+            if (wardId) params.wardId = wardId;
+            if (boothId) params.boothId = boothId;
+            if (assemblyCode && !wardId) params.assemblyCode = assemblyCode;
+            const response = await apiClient.get('/votebase/v1/api/families/map-points', { params });
+            const payload = response?.data?.result ?? response?.data ?? [];
+            return {
+                data: {
+                    result: filterPoints(payload, { trustServerWardScope: Boolean(wardId || boothId) }),
+                },
+            };
+        } catch (apiErr) {
+            console.warn('Family map-points fallback to family list.', apiErr?.response?.data || apiErr?.message);
+            try {
+                const rows = await CRUDAPI.fetchAllFamilies(undefined, boothId, wardId, assemblyCode);
+                return {
+                    data: {
+                        result: filterPoints(rows, { trustServerWardScope: Boolean(wardId || boothId) }),
+                    },
+                };
+            } catch (error) {
+                console.log('Error while fetching family map locations:', error.response?.data || error.message);
+                throw error;
+            }
+        }
+    },
+
+    fetchFamilyDetails: async (wardId, boothId, updatedFrom, updatedTo, page, size, assemblyCode) => {
+        try {
+            const params = {};
+            if (wardId) params.wardId = wardId;
+            if (boothId) params.boothId = boothId;
+            if (assemblyCode && !wardId) params.assemblyCode = assemblyCode;
+            if (updatedFrom) params.updatedFrom = updatedFrom;
+            if (updatedTo) params.updatedTo = updatedTo;
+            if (page !== undefined) params.page = page;
+            if (size !== undefined) params.size = size;
+            const response = await apiClient.get('/votebase/v1/api/families/details', { params });
+            return response.data;
+        } catch (error) {
+            console.log('Error while fetching family details:', error.response?.data || error.message);
             throw error;
         }
     },
@@ -395,12 +554,15 @@ export const CRUDAPI = {
         }
     },
 
-    fetchFamilies: async (hasAssociation, page, size, boothId, wardId) => {
+    fetchFamilies: async (hasAssociation, page, size, boothId, wardId, assemblyCode) => {
         try {
             const params = { page, size };
             if (boothId) params.boothId = boothId;
             if (wardId !== undefined && wardId !== null && String(wardId).trim() !== '') {
                 params.wardId = Number(wardId);
+            }
+            if (assemblyCode !== undefined && assemblyCode !== null && String(assemblyCode).trim() !== '') {
+                params.assemblyCode = String(assemblyCode);
             }
             if (hasAssociation) params.association = hasAssociation;
             const response = await apiClient.get('/votebase/v1/api/family', { params });
@@ -421,12 +583,12 @@ export const CRUDAPI = {
         }
     },
 
-    fetchAllFamilies: async (hasAssociation, boothId, wardId) => {
+    fetchAllFamilies: async (hasAssociation, boothId, wardId, assemblyCode) => {
         const size = 200;
         let page = 0;
         let all = [];
         while (page < 100) {
-            const res = await CRUDAPI.fetchFamilies(hasAssociation, page, size, boothId, wardId);
+            const res = await CRUDAPI.fetchFamilies(hasAssociation, page, size, boothId, wardId, assemblyCode);
             const chunk = res?.content || res?.data?.content || res?.data?.result || res?.result || res?.data || [];
             const list = Array.isArray(chunk) ? chunk : [];
             all = all.concat(list);

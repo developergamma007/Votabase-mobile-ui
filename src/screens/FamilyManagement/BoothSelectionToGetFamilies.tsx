@@ -2,11 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Share } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { useNavigation } from "@react-navigation/native";
-import { CRUDAPI, getAssemblyCode, GOOGLE_MAPS_API_KEY } from "../../apis/Api";
+import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
 import { bgColors } from "../../constants/colors";
 import DropDownPicker from "react-native-dropdown-picker";
-import { GetCurrentLocation } from "../../components/GetCurrentLocation";
-import { WebView } from "react-native-webview";
+import FamilyLocationCapture, { FamilyLocationValue } from "../../components/FamilyLocationCapture";
 import {
   FAMILY_AVAILABILITY_OPTIONS,
   FAMILY_POINT_OPTIONS,
@@ -20,8 +19,16 @@ import {
   getVoterRelationDisplay,
   getVoterPhoneDisplay,
   getVoterHouseDisplay,
+  canViewFullFamilySensitiveData,
+  displayPendingFamilyListName,
+  hasValidFamilyMapLocation,
+  maskMemberNameForDisplay,
+  maskMemberEpicForDisplay,
+  maskMemberPhoneForDisplay,
 } from "../../components/FamilyFormHelpers";
+import { openVoterInfoWithQuickLocation } from "../../helpers/voterLocationNavigation";
 import { AuthContext } from "../../context/AuthContext";
+import FamilyTextSuggest from "../../components/FamilyTextSuggest";
 
 export default function VotersFamilyScreen() {
   const navigation = useNavigation();
@@ -31,7 +38,11 @@ export default function VotersFamilyScreen() {
   const [assemblyCode, setAssemblyCode] = useState("");
   const [openAssembly, setOpenAssembly] = useState(false);
   const [assemblyItems, setAssemblyItems] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<"NEW" | "LIST">("NEW");
+  const [activeTab, setActiveTab] = useState<"NEW" | "PENDING" | "LIST">("NEW");
+  const [pendingRows, setPendingRows] = useState<any[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [pendingAvailabilityFilter, setPendingAvailabilityFilter] = useState<string[]>([...FAMILY_AVAILABILITY_OPTIONS]);
+  const canViewFullFamilyData = canViewFullFamilySensitiveData(role);
 
   const [familyName, setFamilyName] = useState("");
   const [roadName, setRoadName] = useState("");
@@ -41,10 +52,15 @@ export default function VotersFamilyScreen() {
   const [familyNumber, setFamilyNumber] = useState("");
   const [tagLeader, setTagLeader] = useState("");
   const [familyAvailability, setFamilyAvailability] = useState("Available");
+  const [familyNameSuggestions, setFamilyNameSuggestions] = useState<string[]>([]);
   const [roadSuggestions, setRoadSuggestions] = useState<string[]>([]);
   const [leaderSuggestions, setLeaderSuggestions] = useState<string[]>([]);
-  const [showRoadSuggestions, setShowRoadSuggestions] = useState(false);
-  const [showLeaderSuggestions, setShowLeaderSuggestions] = useState(false);
+  const [buildingSuggestions, setBuildingSuggestions] = useState<string[]>([]);
+  const [buildingNumberSuggestions, setBuildingNumberSuggestions] = useState<string[]>([]);
+  const [flatSuggestions, setFlatSuggestions] = useState<string[]>([]);
+  const [addressSuggestions, setAddressSuggestions] = useState<string[]>([]);
+  const [associationSuggestions, setAssociationSuggestions] = useState<string[]>([]);
+  const [associationHeadSuggestions, setAssociationHeadSuggestions] = useState<string[]>([]);
   const [memberQuery, setMemberQuery] = useState("");
   const [memberSuggestions, setMemberSuggestions] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
@@ -58,7 +74,7 @@ export default function VotersFamilyScreen() {
   const [associationName, setAssociationName] = useState("");
   const [associationHeadName, setAssociationHeadName] = useState("");
   const [associationHeadPhone, setAssociationHeadPhone] = useState("");
-  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [location, setLocation] = useState<FamilyLocationValue | null>(null);
 
   const [families, setFamilies] = useState<any[]>([]);
   const [familySearch, setFamilySearch] = useState("");
@@ -125,16 +141,59 @@ export default function VotersFamilyScreen() {
 
   const loadFamilySuggestions = async () => {
     try {
-      const [roadRes, leaderRes] = await Promise.all([
-        CRUDAPI.fetchFamilySuggestions("road").catch(() => ({ data: { result: [] } })),
-        CRUDAPI.fetchFamilySuggestions("leader").catch(() => ({ data: { result: [] } })),
+      const empty = { data: { result: [] } };
+      const pick = (res: any) => res?.data?.result || res?.result || [];
+      const [
+        familyRes,
+        roadRes,
+        leaderRes,
+        buildingRes,
+        buildingNumRes,
+        flatRes,
+        addressRes,
+        associationRes,
+        associationHeadRes,
+      ] = await Promise.all([
+        CRUDAPI.fetchFamilySuggestions("family").catch(() => empty),
+        CRUDAPI.fetchFamilySuggestions("road").catch(() => empty),
+        CRUDAPI.fetchFamilySuggestions("leader").catch(() => empty),
+        CRUDAPI.fetchFamilySuggestions("building").catch(() => empty),
+        CRUDAPI.fetchFamilySuggestions("buildingnumber").catch(() => empty),
+        CRUDAPI.fetchFamilySuggestions("flat").catch(() => empty),
+        CRUDAPI.fetchFamilySuggestions("address").catch(() => empty),
+        CRUDAPI.fetchFamilySuggestions("association").catch(() => empty),
+        CRUDAPI.fetchFamilySuggestions("associationhead").catch(() => empty),
       ]);
-      setRoadSuggestions(roadRes?.data?.result || roadRes?.result || []);
-      setLeaderSuggestions(leaderRes?.data?.result || leaderRes?.result || []);
+      setFamilyNameSuggestions(pick(familyRes));
+      setRoadSuggestions(pick(roadRes));
+      setLeaderSuggestions(pick(leaderRes));
+      setBuildingSuggestions(pick(buildingRes));
+      setBuildingNumberSuggestions(pick(buildingNumRes));
+      setFlatSuggestions(pick(flatRes));
+      setAddressSuggestions(pick(addressRes));
+      setAssociationSuggestions(pick(associationRes));
+      setAssociationHeadSuggestions(pick(associationHeadRes));
     } catch {
+      setFamilyNameSuggestions([]);
       setRoadSuggestions([]);
       setLeaderSuggestions([]);
+      setBuildingSuggestions([]);
+      setBuildingNumberSuggestions([]);
+      setFlatSuggestions([]);
+      setAddressSuggestions([]);
+      setAssociationSuggestions([]);
+      setAssociationHeadSuggestions([]);
     }
+  };
+
+  const closeOtherFamilyPickers = (keep: string) => {
+    if (keep !== "assembly") setOpenAssembly(false);
+    if (keep !== "ward") setOpenWard(false);
+    if (keep !== "availability") setOpenAvailability(false);
+    if (keep !== "economic") setOpenEconomic(false);
+    if (keep !== "head") setOpenHead(false);
+    if (keep !== "nature") setOpenNature(false);
+    if (keep !== "points") setOpenPoints(false);
   };
 
   useEffect(() => {
@@ -208,7 +267,13 @@ export default function VotersFamilyScreen() {
         return;
       }
       try {
-        const res = await CRUDAPI.searchVoters({ searchQuery: q, size: 20, assemblyCode: await getAssemblyCode() });
+        const wardForSearch = selectedWardId || wardItems[0]?.value;
+        const res = await CRUDAPI.searchVoters({
+          searchQuery: q,
+          size: 20,
+          assemblyCode: await getAssemblyCode(),
+          wardId: wardForSearch || undefined,
+        });
         const payload = res?.data?.result || res?.result || res?.data || [];
         setMemberSuggestions(Array.isArray(payload) ? payload : []);
       } catch {
@@ -254,8 +319,6 @@ export default function VotersFamilyScreen() {
     setLocation(null);
     setMemberQuery("");
     setMemberSuggestions([]);
-    setShowRoadSuggestions(false);
-    setShowLeaderSuggestions(false);
     setError("");
     setSuccess("");
   };
@@ -282,7 +345,8 @@ export default function VotersFamilyScreen() {
 
   useEffect(() => {
     if (activeTab === "LIST") loadFamilies();
-  }, [activeTab]);
+    if (activeTab === "PENDING") loadPendingFamilies();
+  }, [activeTab, selectedWardId, assemblyCode]);
 
   const filteredFamilies = useMemo(() => {
     const q = familySearch.trim().toLowerCase();
@@ -313,31 +377,72 @@ export default function VotersFamilyScreen() {
     if (!headEpicNo) setHeadEpicNo(voter.epicNo);
   };
 
-  const openVoterInfo = (member: any) => {
+  const shouldMaskAvailableInEdit = !canViewFullFamilyData && familyAvailability === "Available";
+
+  const openVoterInfo = async (member: any) => {
     if (!member?.rawVoter) return;
-    (navigation as any).navigate("Voter Info", {
-      voter: normalizeVoterForInfo(member.rawVoter, member.boothId),
-      booth: { boothId: member.boothId },
-    });
+    if (shouldMaskAvailableInEdit) {
+      setError("Voter details are hidden for Available families to protect data.");
+      setSuccess("");
+      return;
+    }
+    setError("");
+    await openVoterInfoWithQuickLocation(
+      navigation as any,
+      normalizeVoterForInfo(member.rawVoter, member.boothId),
+      { boothId: member.boothId },
+      (msg) => setError(msg),
+    );
   };
+
+  const loadPendingFamilies = async () => {
+    const wardId = selectedWardId || wardItems[0]?.value;
+    if (!wardId) {
+      setPendingRows([]);
+      return;
+    }
+    setPendingLoading(true);
+    setError("");
+    try {
+      const res = await CRUDAPI.fetchFamilyDetails(
+        wardId,
+        undefined,
+        undefined,
+        undefined,
+        0,
+        500,
+        assemblyCode || undefined,
+      );
+      const payload = res?.data?.result ?? res?.result ?? res;
+      const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+      setPendingRows(rows);
+    } catch (e: any) {
+      setPendingRows([]);
+      setError(e?.message || "Failed to load pending families.");
+    } finally {
+      setPendingLoading(false);
+    }
+  };
+
+  const filteredPendingRows = useMemo(() => {
+    const allowed = new Set(pendingAvailabilityFilter.map((v) => String(v).trim()));
+    if (!allowed.size || allowed.size >= FAMILY_AVAILABILITY_OPTIONS.length) return pendingRows;
+    return pendingRows.filter((row) => allowed.has(String(row.familyAvailability || "").trim()));
+  }, [pendingRows, pendingAvailabilityFilter]);
+
+  const pendingOnMapRows = useMemo(
+    () => filteredPendingRows.filter((row) => hasValidFamilyMapLocation(row)),
+    [filteredPendingRows],
+  );
+
+  const pendingNoMapRows = useMemo(
+    () => filteredPendingRows.filter((row) => !hasValidFamilyMapLocation(row)),
+    [filteredPendingRows],
+  );
 
   const removeMember = (epicNo: string) => {
     setMembers((prev) => prev.filter((m) => m.epicNo !== epicNo));
     if (headEpicNo === epicNo) setHeadEpicNo("");
-  };
-
-  const captureLocation = async () => {
-    setError("");
-    try {
-      const pos: any = await GetCurrentLocation();
-      if (!pos?.latitude || !pos?.longitude) {
-        throw new Error("Unable to capture location.");
-      }
-      setLocation({ latitude: Number(pos.latitude), longitude: Number(pos.longitude) });
-      setSuccess("Location captured.");
-    } catch (e: any) {
-      setError(e?.message || "Unable to capture location.");
-    }
   };
 
   const createFamily = async () => {
@@ -345,9 +450,13 @@ export default function VotersFamilyScreen() {
     setError("");
     setSuccess("");
     try {
+      if (!location?.latitude || !location?.longitude) {
+        throw new Error("Location is required. Please capture location before saving.");
+      }
       if (!familyName.trim()) throw new Error("Family name is required");
       if (!roadName.trim()) throw new Error("Road name is required");
-      if (!selectedWardId && wardItems.length > 1) throw new Error("Please select a ward.");
+      const wardIdForCreate = selectedWardId || wardItems[0]?.value;
+      if (!wardIdForCreate) throw new Error("Please select a ward.");
       if (members.length === 0) throw new Error("Add at least one member");
       if (!headEpicNo) throw new Error("Pick head of family");
       const boothId = members.find((m) => m.boothId)?.boothId;
@@ -371,6 +480,7 @@ export default function VotersFamilyScreen() {
         headEpicNo,
         memberEpicNos: members.map((m) => m.epicNo),
         boothId: Number(boothId),
+        wardId: Number(wardIdForCreate),
         phone: headPhone || members.find((m) => m.epicNo === headEpicNo)?.phone || "",
         points: Number(familyPoints || 5),
         pointsProvided: 0,
@@ -389,39 +499,18 @@ export default function VotersFamilyScreen() {
       await loadFamilySuggestions();
       const all = await CRUDAPI.fetchAllFamilies("", undefined, selectedWardId);
       setFamilies(sortFamiliesByNumber(all));
+      await loadPendingFamilies();
       resetNewFamilyForm();
     } catch (e: any) {
-      setError(e?.message || "Failed to create family.");
+      const apiMsg =
+        e?.response?.data?.message
+        || e?.response?.data?.detail
+        || (typeof e?.response?.data?.data?.error === "string" ? e.response.data.data.error : null);
+      setError(apiMsg || e?.message || "Failed to create family.");
     } finally {
       setSaving(false);
     }
   };
-
-  const locationMapHtml = useMemo(() => {
-    if (!location || !GOOGLE_MAPS_API_KEY) return "";
-    return `
-      <!doctype html>
-      <html>
-      <head>
-        <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
-        <style>
-          html, body, #map { margin:0; padding:0; width:100%; height:100%; background:#f8fafc; }
-        </style>
-      </head>
-      <body>
-        <div id="map"></div>
-        <script>
-          function initMap() {
-            var pos = { lat: ${location.latitude}, lng: ${location.longitude} };
-            var map = new google.maps.Map(document.getElementById('map'), { zoom: 17, center: pos });
-            new google.maps.Marker({ position: pos, map: map, title: 'Household Location' });
-          }
-        </script>
-        <script async defer src="https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap"></script>
-      </body>
-      </html>
-    `;
-  }, [location]);
 
   return (
     <View className={`flex-1 ${bgColors.white}`}>
@@ -433,8 +522,11 @@ export default function VotersFamilyScreen() {
             value={assemblyCode}
             items={assemblyItems}
             setOpen={setOpenAssembly}
+            onOpen={() => closeOtherFamilyPickers("assembly")}
             setValue={setAssemblyCode}
             setItems={setAssemblyItems}
+            closeAfterSelecting={true}
+            onSelectItem={() => setOpenAssembly(false)}
             style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
             dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
             textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
@@ -446,13 +538,19 @@ export default function VotersFamilyScreen() {
             className={`flex-1 py-3 rounded-xl ${activeTab === "NEW" ? "bg-blue-600" : "bg-transparent"}`}
             onPress={() => setActiveTab("NEW")}
           >
-            <Text className={`text-center font-bold ${activeTab === "NEW" ? "text-white" : "text-slate-700"}`}>New Family</Text>
+            <Text className={`text-center font-bold text-xs ${activeTab === "NEW" ? "text-white" : "text-slate-700"}`}>New Family</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className={`flex-1 py-3 rounded-xl ${activeTab === "PENDING" ? "bg-blue-600" : "bg-transparent"}`}
+            onPress={() => setActiveTab("PENDING")}
+          >
+            <Text className={`text-center font-bold text-xs ${activeTab === "PENDING" ? "text-white" : "text-slate-700"}`}>Pending Family</Text>
           </TouchableOpacity>
           <TouchableOpacity
             className={`flex-1 py-3 rounded-xl ${activeTab === "LIST" ? "bg-blue-600" : "bg-transparent"}`}
             onPress={() => setActiveTab("LIST")}
           >
-            <Text className={`text-center font-bold ${activeTab === "LIST" ? "text-white" : "text-slate-700"}`}>Families</Text>
+            <Text className={`text-center font-bold text-xs ${activeTab === "LIST" ? "text-white" : "text-slate-700"}`}>Families</Text>
           </TouchableOpacity>
         </View>
 
@@ -466,8 +564,11 @@ export default function VotersFamilyScreen() {
                   value={selectedWardId}
                   items={wardItems}
                   setOpen={setOpenWard}
+                  onOpen={() => closeOtherFamilyPickers("ward")}
                   setValue={setSelectedWardId}
                   setItems={setWardItems}
+                  closeAfterSelecting={true}
+                  onSelectItem={() => setOpenWard(false)}
                   style={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12, minHeight: 46 }}
                   dropDownContainerStyle={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12 }}
                   textStyle={{ fontSize: 14, color: "#1E293B", fontWeight: "600" }}
@@ -482,83 +583,103 @@ export default function VotersFamilyScreen() {
               )}
             </View>
 
+            <FamilyTextSuggest
+              label="Road Name (Mandatory)"
+              value={roadName}
+              onChangeText={setRoadName}
+              suggestions={roadSuggestions}
+              placeholder="Road name"
+            />
+
+            <FamilyTextSuggest
+              label="Enter family name"
+              value={familyName}
+              onChangeText={setFamilyName}
+              suggestions={familyNameSuggestions}
+              placeholder="Family name"
+            />
+
             <View className="mb-4">
-              <Text className="text-slate-600 mb-2 font-semibold">Enter family name</Text>
-              <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={familyName} onChangeText={setFamilyName} placeholder="Family name" />
+              <Text className="text-slate-600 mb-2 font-semibold">Family Number</Text>
+              <TextInput
+                className="border border-slate-200 bg-slate-100 rounded-xl px-4 py-3 text-slate-600"
+                value={familyNumber}
+                editable={false}
+                placeholder={wardNumberPrefix ? `${wardNumberPrefix}-1` : "Select ward"}
+              />
+            </View>
+
+            <View className="flex-row gap-3 flex-wrap">
+              <View className="flex-1 min-w-[45%]">
+                <FamilyTextSuggest
+                  label="Building/Apartment Number"
+                  value={buildingNumber}
+                  onChangeText={setBuildingNumber}
+                  suggestions={buildingNumberSuggestions}
+                  placeholder="Building/Apartment Number"
+                  className="mb-0"
+                />
+              </View>
+              <View className="flex-1 min-w-[45%]">
+                <FamilyTextSuggest
+                  label="Building/Apartment Name"
+                  value={buildingName}
+                  onChangeText={setBuildingName}
+                  suggestions={buildingSuggestions}
+                  placeholder="Building/Apartment Name"
+                  className="mb-0"
+                />
+              </View>
+              <View className="flex-1 min-w-[45%]">
+                <FamilyTextSuggest
+                  label="Flat Number"
+                  value={flatNumber}
+                  onChangeText={setFlatNumber}
+                  suggestions={flatSuggestions}
+                  placeholder="Flat Number"
+                  className="mb-0"
+                />
+              </View>
             </View>
 
             <View className="mt-4">
-              <Text className="text-slate-600 mb-2 font-semibold">Road Name (Mandatory)</Text>
-              <View className="flex-row gap-2">
-                <TextInput
-                  className="flex-1 border border-slate-300 bg-white rounded-xl px-4 py-3"
-                  value={roadName}
-                  onChangeText={(text) => {
-                    setRoadName(text);
-                    setShowRoadSuggestions(true);
-                  }}
-                  onFocus={() => setShowRoadSuggestions(true)}
-                  placeholder="Road name"
-                />
-                <TouchableOpacity
-                  className="bg-blue-600 rounded-xl px-4 justify-center"
-                  onPress={() => {
-                    if (!roadName.trim()) {
-                      setError("Road name is required.");
-                      return;
-                    }
-                    setError("");
-                    setSuccess("Road name added for house marking.");
-                    setShowRoadSuggestions(false);
-                  }}
-                >
-                  <Text className="text-white font-bold">Add</Text>
-                </TouchableOpacity>
-              </View>
-              {showRoadSuggestions && roadSuggestions.length > 0 ? (
-                <View className="border border-slate-200 rounded-xl mt-2 bg-white max-h-36">
-                  <ScrollView nestedScrollEnabled>
-                    {roadSuggestions
-                      .filter((item) => !roadName.trim() || item.toLowerCase().includes(roadName.trim().toLowerCase()))
-                      .slice(0, 8)
-                      .map((item) => (
-                        <TouchableOpacity key={item} className="px-3 py-2 border-b border-slate-100" onPress={() => { setRoadName(item); setShowRoadSuggestions(false); }}>
-                          <Text className="text-slate-800">{item}</Text>
-                        </TouchableOpacity>
-                      ))}
-                  </ScrollView>
+              <FamilyTextSuggest
+                label="Building/Apartment Address"
+                value={buildingAddress}
+                onChangeText={setBuildingAddress}
+                suggestions={addressSuggestions}
+                placeholder="Building/Apartment Address"
+              />
+              <TouchableOpacity className="flex-row items-center mt-2" onPress={() => setHasAssociation((v) => !v)}>
+                <View className={`w-7 h-7 rounded mr-2 items-center justify-center ${hasAssociation ? "bg-blue-600" : "bg-slate-200"}`}>
+                  {hasAssociation ? <Ionicons name="checkmark" size={18} color="#fff" /> : null}
                 </View>
-              ) : null}
-            </View>
-
-            <View className="mt-4">
-              <Text className="text-slate-600 mb-2 font-semibold">Building/Apartment Address</Text>
-              <View className="flex-row items-center gap-3">
-                <TextInput
-                  className="flex-1 border border-slate-300 bg-white rounded-xl px-4 py-3"
-                  placeholder="Building/Apartment Address"
-                  value={buildingAddress}
-                  onChangeText={setBuildingAddress}
-                />
-                <TouchableOpacity className="flex-row items-center shrink-0" onPress={() => setHasAssociation((v) => !v)}>
-                  <View className={`w-7 h-7 rounded mr-2 items-center justify-center ${hasAssociation ? "bg-blue-600" : "bg-slate-200"}`}>
-                    {hasAssociation ? <Ionicons name="checkmark" size={18} color="#fff" /> : null}
-                  </View>
-                  <Text className="text-slate-800 text-[14px] font-semibold">If have association</Text>
-                </TouchableOpacity>
-              </View>
+                <Text className="text-slate-800 text-[14px] font-semibold">If have association</Text>
+              </TouchableOpacity>
             </View>
 
             {hasAssociation ? (
-              <View className="mt-4">
+              <View className="mt-2">
                 <View className="flex-row gap-3 flex-wrap">
                   <View className="flex-1 min-w-[45%]">
-                    <Text className="text-slate-700 font-semibold mb-2">Association Name</Text>
-                    <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" placeholder="Association Name" value={associationName} onChangeText={setAssociationName} />
+                    <FamilyTextSuggest
+                      label="Association Name"
+                      value={associationName}
+                      onChangeText={setAssociationName}
+                      suggestions={associationSuggestions}
+                      placeholder="Association Name"
+                      className="mb-0"
+                    />
                   </View>
                   <View className="flex-1 min-w-[45%]">
-                    <Text className="text-slate-700 font-semibold mb-2">Association Head Name</Text>
-                    <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" placeholder="Association Head Name" value={associationHeadName} onChangeText={setAssociationHeadName} />
+                    <FamilyTextSuggest
+                      label="Association Head Name"
+                      value={associationHeadName}
+                      onChangeText={setAssociationHeadName}
+                      suggestions={associationHeadSuggestions}
+                      placeholder="Association Head Name"
+                      className="mb-0"
+                    />
                   </View>
                 </View>
                 <View className="mt-3">
@@ -568,49 +689,13 @@ export default function VotersFamilyScreen() {
               </View>
             ) : null}
 
-            <View className="flex-row gap-3 mt-4 flex-wrap">
-              <View className="flex-1 min-w-[45%]">
-                <Text className="text-slate-600 mb-2 font-semibold">Building/Apartment Number</Text>
-                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={buildingNumber} onChangeText={setBuildingNumber} placeholder="Building/Apartment Number" />
-              </View>
-              <View className="flex-1 min-w-[45%]">
-                <Text className="text-slate-600 mb-2 font-semibold">Building/Apartment Name</Text>
-                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={buildingName} onChangeText={setBuildingName} placeholder="Building/Apartment Name" />
-              </View>
-              <View className="flex-1 min-w-[45%]">
-                <Text className="text-slate-600 mb-2 font-semibold">Flat Number</Text>
-                <TextInput className="border border-slate-300 bg-white rounded-xl px-4 py-3" value={flatNumber} onChangeText={setFlatNumber} placeholder="Flat Number" />
-              </View>
-              <View className="flex-1 min-w-[45%]">
-                <Text className="text-slate-600 mb-2 font-semibold">Family Number</Text>
-                <TextInput className="border border-slate-200 bg-slate-100 rounded-xl px-4 py-3 text-slate-600" value={familyNumber} editable={false} placeholder={wardNumberPrefix ? `${wardNumberPrefix}-1` : "Select ward"} keyboardType="default" />
-              </View>
-            </View>
-
-            <View className="mt-4 z-40">
-              <Text className="text-slate-600 mb-2 font-semibold">Tag a Leader</Text>
-              <TextInput
-                className="border border-slate-300 bg-white rounded-xl px-4 py-3"
-                value={tagLeader}
-                onChangeText={(text) => { setTagLeader(text); setShowLeaderSuggestions(true); }}
-                onFocus={() => setShowLeaderSuggestions(true)}
-                placeholder="Leader name"
-              />
-              {showLeaderSuggestions && leaderSuggestions.length > 0 ? (
-                <View className="border border-slate-200 rounded-xl mt-2 bg-white max-h-36">
-                  <ScrollView nestedScrollEnabled>
-                    {leaderSuggestions
-                      .filter((item) => !tagLeader.trim() || item.toLowerCase().includes(tagLeader.trim().toLowerCase()))
-                      .slice(0, 8)
-                      .map((item) => (
-                        <TouchableOpacity key={item} className="px-3 py-2 border-b border-slate-100" onPress={() => { setTagLeader(item); setShowLeaderSuggestions(false); }}>
-                          <Text className="text-slate-800">{item}</Text>
-                        </TouchableOpacity>
-                      ))}
-                  </ScrollView>
-                </View>
-              ) : null}
-            </View>
+            <FamilyTextSuggest
+              label="Tag a Leader"
+              value={tagLeader}
+              onChangeText={setTagLeader}
+              suggestions={leaderSuggestions}
+              placeholder="Leader name"
+            />
 
             <View className="mt-4 z-30">
               <Text className="text-slate-700 font-semibold mb-2">Family Availability</Text>
@@ -619,36 +704,30 @@ export default function VotersFamilyScreen() {
                 value={familyAvailability}
                 items={availabilityItems}
                 setOpen={setOpenAvailability}
+                onOpen={() => closeOtherFamilyPickers("availability")}
                 setValue={setFamilyAvailability}
                 setItems={setAvailabilityItems}
+                closeAfterSelecting={true}
+                onSelectItem={() => setOpenAvailability(false)}
                 style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 48 }}
                 dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
                 textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
               />
             </View>
 
-            <View className="mt-4 border border-dashed border-slate-300 rounded-2xl h-56 overflow-hidden bg-slate-50">
-              {location && locationMapHtml ? (
-                <WebView
-                  originWhitelist={["*"]}
-                  source={{ html: locationMapHtml }}
-                  javaScriptEnabled
-                  domStorageEnabled
-                  scrollEnabled={false}
-                />
-              ) : (
-                <View className="flex-1 items-center justify-center">
-                  <Text className="text-slate-500 text-base text-center px-6">
-                    Capture location to preview household map.
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            <TouchableOpacity className="mt-4 bg-blue-600 rounded-2xl py-4 flex-row items-center justify-center" onPress={captureLocation}>
-              <Ionicons name="location-outline" size={20} color="#fff" />
-              <Text className="text-white font-bold text-[14px] ml-2">Capture Household Location</Text>
-            </TouchableOpacity>
+            <FamilyLocationCapture
+              location={location}
+              onLocationChange={setLocation}
+              onGpsSuccess={(msg) => {
+                setError("");
+                setSuccess(msg);
+              }}
+              onPinSuccess={(msg) => {
+                setError("");
+                setSuccess(msg);
+              }}
+              onError={(msg) => setError(msg)}
+            />
 
             <Text className="text-slate-800 font-bold text-[20px] mt-7 mb-3">Family Members</Text>
             <View className="flex-row">
@@ -687,7 +766,9 @@ export default function VotersFamilyScreen() {
                   <View key={`${String(m?.epicNo || m?.memberId || m?.voterName || "member")}-${memberIndex}`} className="flex-row items-center px-3 py-2 border-t border-slate-100">
                     <View style={{ width: 140 }}>
                       <TouchableOpacity onPress={() => openVoterInfo(m)}>
-                        <Text className="text-blue-700 font-semibold" numberOfLines={1}>{m.voterName}</Text>
+                        <Text className="text-blue-700 font-semibold" numberOfLines={1}>
+                          {maskMemberNameForDisplay(role, familyAvailability, m.voterName)}
+                        </Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => setHeadEpicNo(m.epicNo)}>
                         <Text className={`text-xs mt-1 ${headEpicNo === m.epicNo ? "text-blue-600 font-bold" : "text-slate-500"}`} numberOfLines={1}>
@@ -696,10 +777,14 @@ export default function VotersFamilyScreen() {
                       </TouchableOpacity>
                     </View>
                     <TouchableOpacity style={{ width: 110 }} onPress={() => openVoterInfo(m)}>
-                      <Text className="text-blue-700" numberOfLines={1}>{m.epicNo}</Text>
+                      <Text className="text-blue-700" numberOfLines={1}>
+                        {maskMemberEpicForDisplay(role, familyAvailability, m.epicNo)}
+                      </Text>
                     </TouchableOpacity>
                     <Text className="text-slate-700" style={{ width: 120 }} numberOfLines={2}>{m.relationName || "-"}</Text>
-                    <Text className="text-slate-700" style={{ width: 90 }} numberOfLines={1}>{m.phone || "-"}</Text>
+                    <Text className="text-slate-700" style={{ width: 90 }} numberOfLines={1}>
+                      {maskMemberPhoneForDisplay(role, familyAvailability, m.phone)}
+                    </Text>
                     <Text className="text-slate-700" style={{ width: 110 }} numberOfLines={2}>{m.houseNo || "-"}</Text>
                     <View style={{ width: 100 }}>
                       <TouchableOpacity onPress={() => openVoterInfo(m)}>
@@ -724,8 +809,11 @@ export default function VotersFamilyScreen() {
                     value={economicStatus}
                     items={economicItems}
                     setOpen={setOpenEconomic}
+                    onOpen={() => closeOtherFamilyPickers("economic")}
                     setValue={setEconomicStatus}
                     setItems={setEconomicItems}
+                    closeAfterSelecting={true}
+                    onSelectItem={() => setOpenEconomic(false)}
                     style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 48 }}
                     dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
                     textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
@@ -739,8 +827,11 @@ export default function VotersFamilyScreen() {
                     value={headEpicNo}
                     items={members.map((m) => ({ label: `${m.voterName} (${m.epicNo})`, value: m.epicNo }))}
                     setOpen={setOpenHead}
+                    onOpen={() => closeOtherFamilyPickers("head")}
                     setValue={setHeadEpicNo}
                     setItems={() => { }}
+                    closeAfterSelecting={true}
+                    onSelectItem={() => setOpenHead(false)}
                     placeholder="Pick head of family"
                     style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 48 }}
                     dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
@@ -768,8 +859,11 @@ export default function VotersFamilyScreen() {
                     value={familyNature}
                     items={natureItems}
                     setOpen={setOpenNature}
+                    onOpen={() => closeOtherFamilyPickers("nature")}
                     setValue={setFamilyNature}
                     setItems={setNatureItems}
+                    closeAfterSelecting={true}
+                    onSelectItem={() => setOpenNature(false)}
                     style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 48 }}
                     dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
                     textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
@@ -784,8 +878,11 @@ export default function VotersFamilyScreen() {
                   value={familyPoints}
                   items={pointItems}
                   setOpen={setOpenPoints}
+                  onOpen={() => closeOtherFamilyPickers("points")}
                   setValue={setFamilyPoints}
                   setItems={setPointItems}
+                  closeAfterSelecting={true}
+                  onSelectItem={() => setOpenPoints(false)}
                   style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 48 }}
                   dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
                   textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
@@ -800,6 +897,67 @@ export default function VotersFamilyScreen() {
             <TouchableOpacity className={`mt-4 rounded-2xl py-4 ${saving ? "bg-slate-400" : "bg-blue-700"}`} onPress={createFamily} disabled={saving}>
               <Text className="text-center text-white font-bold text-[17px]">{saving ? "Saving..." : "Save Family"}</Text>
             </TouchableOpacity>
+          </>
+        ) : activeTab === "PENDING" ? (
+          <>
+            <Text className="text-slate-600 text-sm mb-3">
+              Families in your ward — with or without GPS. Tap a row to open family details.
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
+              {FAMILY_AVAILABILITY_OPTIONS.map((label) => {
+                const active = pendingAvailabilityFilter.includes(label);
+                return (
+                  <TouchableOpacity
+                    key={label}
+                    className={`mr-2 px-3 py-2 rounded-full border ${active ? "bg-blue-100 border-blue-400" : "bg-white border-slate-200"}`}
+                    onPress={() => {
+                      setPendingAvailabilityFilter((current) => {
+                        const next = active ? current.filter((x) => x !== label) : [...current, label];
+                        return next.length ? next : [...FAMILY_AVAILABILITY_OPTIONS];
+                      });
+                    }}
+                  >
+                    <Text className="text-xs font-semibold text-slate-700">{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            {pendingLoading ? <ActivityIndicator size="large" color="#2563eb" /> : null}
+            {!pendingLoading && filteredPendingRows.length === 0 ? (
+              <Text className="text-slate-400 mt-2">No families match the selected filters.</Text>
+            ) : null}
+            {!pendingLoading && pendingOnMapRows.length > 0 ? (
+              <Text className="text-slate-700 font-bold mt-2 mb-1">On map ({pendingOnMapRows.length})</Text>
+            ) : null}
+            {!pendingLoading
+              ? pendingOnMapRows.map((family: any) => (
+                <TouchableOpacity
+                  key={`onmap-${family.familyId}`}
+                  className="bg-white border border-slate-200 rounded-2xl p-4 mb-2"
+                  onPress={() => (navigation as any).navigate("voterFamilyDetails", { family, associationName: null, boothId: family.boothId })}
+                >
+                  <Text className="font-bold text-slate-800">{displayPendingFamilyListName(family, role)}</Text>
+                  <Text className="text-slate-500 text-xs mt-1">
+                    {family.roadName || "-"} · #{family.familyNumber || "-"} · {family.familyAvailability || "-"}
+                  </Text>
+                </TouchableOpacity>
+              ))
+              : null}
+            {!pendingLoading && pendingNoMapRows.length > 0 ? (
+              <Text className="text-slate-700 font-bold mt-3 mb-1">No GPS ({pendingNoMapRows.length})</Text>
+            ) : null}
+            {!pendingLoading
+              ? pendingNoMapRows.map((family: any) => (
+                <TouchableOpacity
+                  key={`nomap-${family.familyId}`}
+                  className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-2"
+                  onPress={() => (navigation as any).navigate("voterFamilyDetails", { family, associationName: null, boothId: family.boothId })}
+                >
+                  <Text className="font-bold text-slate-800">{displayPendingFamilyListName(family, role)}</Text>
+                  <Text className="text-amber-800 text-xs mt-1">Location missing — open to add GPS</Text>
+                </TouchableOpacity>
+              ))
+              : null}
           </>
         ) : (
           <>

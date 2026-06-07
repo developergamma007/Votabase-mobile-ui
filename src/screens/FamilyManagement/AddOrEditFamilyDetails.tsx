@@ -7,13 +7,13 @@ import {
     ScrollView,
     Alert,
 } from "react-native";
+import FamilyLocationCapture, { FamilyLocationValue } from "../../components/FamilyLocationCapture";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import DropDownPicker from "react-native-dropdown-picker";
 import { bgColors } from "../../constants/colors";
 import { CRUDAPI } from "../../apis/Api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthContext } from "../../context/AuthContext";
-import { GetCurrentLocation } from "../../components/GetCurrentLocation";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 export default function AddFamilyDetails() {
@@ -32,7 +32,11 @@ export default function AddFamilyDetails() {
         const [associationId, setAssociationId] = useState(family?.associationId);
         const [familyNature, setFamilyNature] = useState(family?.familyNature);
         const [members, setMembers] = useState(family?.members || []);
-        const [location, setLocation] = useState({});
+        const [location, setLocation] = useState<FamilyLocationValue | null>(
+            family?.latitude && family?.longitude
+                ? { latitude: Number(family.latitude), longitude: Number(family.longitude) }
+                : null,
+        );
         const [searchQuery, setSearchQuery] = useState("");
         const [searchError, setSearchError] = useState("");
         // Dropdown states
@@ -187,11 +191,6 @@ export default function AddFamilyDetails() {
             } catch (error) {
                 setBanner({ type: "error", message: "Failed to update family details" });
             }
-        };
-
-        const fetchLocation = async () => {
-            const location = await GetCurrentLocation();
-            setLocation(location)
         };
 
         return (
@@ -402,19 +401,13 @@ export default function AddFamilyDetails() {
                             zIndex={500}
                         />
                     </View>
-                    <TouchableOpacity
-                        className={`flex-row justify-center items-center py-3 rounded-full ${Object.keys(location).length != 0 ? bgColors.green600 : bgColors.customBlue}`}
-                        onPress={fetchLocation}
-                    >
-                        <Ionicons
-                            name={Object.keys(location).length != 0 ? "checkmark-circle-outline" : "location-outline"}
-                            size={20}
-                            color="white"
-                        />
-                        <Text className="text-white text-base font-semibold ml-2">
-                            {Object.keys(location).length != 0 ? "Location Fetched" : "Get Location"}
-                        </Text>
-                    </TouchableOpacity>
+                    <FamilyLocationCapture
+                        location={location}
+                        onLocationChange={setLocation}
+                        onGpsSuccess={(msg) => setBanner({ type: "success", message: msg })}
+                        onPinSuccess={(msg) => setBanner({ type: "success", message: msg })}
+                        onError={(msg) => setBanner({ type: "error", message: msg })}
+                    />
 
 
                 </View>

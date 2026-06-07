@@ -20,9 +20,9 @@ function App() {
   // const isDarkMode = useColorScheme() === 'dark'; 
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={styles.container}>
       <AuthProvider>
-         <AppNavigation />
+        <AppNavigation />
       </AuthProvider>
     </SafeAreaProvider>
   );

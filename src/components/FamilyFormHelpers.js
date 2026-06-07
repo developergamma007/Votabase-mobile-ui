@@ -6,6 +6,65 @@ export const FAMILY_AVAILABILITY_OPTIONS = [
   'Door Closed',
 ];
 
+export const maskFamilySensitiveValue = (value) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (raw.length <= 4) return raw;
+  return `${'*'.repeat(raw.length - 4)}${raw.slice(-4)}`;
+};
+
+export const maskEpicLastFour = maskFamilySensitiveValue;
+
+export const maskFamilyNameLeading = (value) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (raw.length <= 4) return raw;
+  return `${raw.slice(0, 4)}${'*'.repeat(raw.length - 4)}`;
+};
+
+export const canViewFullFamilySensitiveData = (role) => {
+  const r = normalizeFamilyRole(role);
+  return ['SUPER_ADMIN', 'ADMIN', 'ASSEMBLY', 'WARD'].includes(r);
+};
+
+export const isBoothFamilyRole = (role) => {
+  const r = normalizeFamilyRole(role);
+  return r === 'BOOTH' || r === 'USER';
+};
+
+export const shouldMaskAvailableFamilyForRole = (role, availability) => {
+  if (canViewFullFamilySensitiveData(role)) return false;
+  if (!isBoothFamilyRole(role)) return false;
+  return String(availability || '').trim() === 'Available';
+};
+
+export const displayPendingFamilyListName = (family, role) => {
+  const name = family?.familyName || 'Unnamed family';
+  if (!shouldMaskAvailableFamilyForRole(role, family?.familyAvailability)) return name;
+  return maskFamilyNameLeading(name);
+};
+
+export const maskMemberNameForDisplay = (role, availability, name) => {
+  if (!shouldMaskAvailableFamilyForRole(role, availability)) return name || '-';
+  return maskFamilyNameLeading(name || '');
+};
+
+export const maskMemberEpicForDisplay = (role, availability, epic) => {
+  if (!shouldMaskAvailableFamilyForRole(role, availability)) return epic || '-';
+  return maskEpicLastFour(epic || '');
+};
+
+export const maskMemberPhoneForDisplay = (role, availability, phone) => {
+  if (!shouldMaskAvailableFamilyForRole(role, availability)) return phone || '-';
+  return maskEpicLastFour(phone || '');
+};
+
+export const hasValidFamilyMapLocation = (family = {}) => {
+  const lat = Number(family?.latitude);
+  const lng = Number(family?.longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+};
+
 export const FAMILY_POINT_OPTIONS = Array.from({ length: 100 }, (_, index) => ({
   label: String(index + 1),
   value: String(index + 1),
@@ -62,7 +121,20 @@ export const familyBelongsToWard = (family, wardId, wardCode) => {
   if (!wardId && !wardCode) return true;
   if (wardId != null && String(wardId).trim() !== "" && String(family?.wardId) === String(wardId)) return true;
   if (wardCode && String(family?.wardCode ?? "").trim() === String(wardCode).trim()) return true;
+  const parts = String(family?.familyNumber ?? "").trim().split("-");
+  if (parts.length >= 3 && wardCode) {
+    const wardFromNumber = String(parts[1] ?? "").replace(/^0+/, "") || parts[1];
+    const target = String(wardCode).trim().replace(/^0+/, "") || String(wardCode).trim();
+    if (wardFromNumber === target) return true;
+  }
   return false;
+};
+
+export const familyNumberMatchesPrefix = (familyNumber, wardPrefix = "") => {
+  const prefix = String(wardPrefix ?? "").trim();
+  const raw = String(familyNumber ?? "").trim();
+  if (!prefix || !raw) return false;
+  return raw.toLowerCase().startsWith(`${prefix.toLowerCase()}-`);
 };
 
 export const getNextFamilyNumber = (families = [], wardPrefix = "") => {
@@ -76,15 +148,46 @@ export const getNextFamilyNumber = (families = [], wardPrefix = "") => {
     return String(max + 1);
   }
   let max = 0;
+  const prefixKey = `${prefix}-`.toLowerCase();
   (families || []).forEach((family) => {
-    const n = parseFamilyNumberSeq(family?.familyNumber, prefix);
+    const raw = String(family?.familyNumber ?? "").trim();
+    if (!raw.toLowerCase().startsWith(prefixKey)) return;
+    const n = parseFamilyNumberSeq(raw, prefix);
     if (n != null && n > max) max = n;
   });
   return `${prefix}-${max + 1}`;
 };
 
+export const familiesForNextNumber = (families = [], wardId, wardCode, wardPrefix = "") => {
+  const prefix = String(wardPrefix ?? "").trim();
+  return (families || []).filter((family) => {
+    if (prefix && familyNumberMatchesPrefix(family?.familyNumber, prefix)) return true;
+    return familyBelongsToWard(family, wardId, wardCode);
+  });
+};
+
 export const hasHouseMarkingFields = (buildingNumber, buildingName, flatNumber) =>
   [buildingNumber, buildingName, flatNumber].every((part) => String(part || '').trim());
+
+export const getWardBoothIdList = (boothItems = []) =>
+  (boothItems || [])
+    .map((item) => String(item?.value ?? '').trim())
+    .filter((value) => value && value !== '');
+
+export const resolveFamilyCreateBoothId = (boothItems = [], explicitBoothId = '') => {
+  const booths = getWardBoothIdList(boothItems);
+  const explicit = String(explicitBoothId ?? '').trim();
+  if (explicit && booths.includes(explicit)) return explicit;
+  return booths[0] || '';
+};
+
+export const isMemberBoothInWard = (memberBoothId, boothItems = []) => {
+  const allowed = getWardBoothIdList(boothItems);
+  if (!allowed.length) return true;
+  const boothId = String(memberBoothId ?? '').trim();
+  if (!boothId) return false;
+  return allowed.includes(boothId);
+};
 
 /** Relation label for family member rows (API uses relationFirstMiddleNameEn, not relationNameEn). */
 export const getVoterRelationDisplay = (voter = {}) => {
@@ -113,10 +216,13 @@ export const getVoterRelationDisplay = (voter = {}) => {
   return name || type || '';
 };
 
-export const getVoterPhoneDisplay = (voter = {}) => {
+export const getVoterPhoneDisplay = (voter = {}, role = '', familyAvailability = '') => {
   const raw = voter.mobile ?? voter.mobileNumber ?? voter.phone ?? '';
   const s = String(raw).trim();
   if (!s || s === 'null' || s === 'undefined') return '';
+  if (role && shouldMaskAvailableFamilyForRole(role, familyAvailability)) {
+    return maskEpicLastFour(s);
+  }
   return s;
 };
 
@@ -127,21 +233,26 @@ export const getVoterHouseDisplay = (voter = {}) => {
   return s;
 };
 
-export const buildFamilyMapTooltipText = (point = {}) => {
+export const buildFamilyMapTooltipText = (point = {}, role = '') => {
+  const availability = point.familyAvailability || 'Available';
   const members = Array.isArray(point.members) ? point.members : [];
   const memberLines = members.length
     ? members.map((m, index) => {
-      const name = m.voterName || m.name || '-';
+      const name = maskMemberNameForDisplay(role, availability, m.voterName || m.name || '-');
       const relation = m.relationName || m.relation || '-';
-      const epic = m.epicNo || m.epic || '-';
+      const epic = maskMemberEpicForDisplay(role, availability, m.epicNo || m.epic || '-');
       return `${index + 1}. ${name} | ${relation} | ${epic}`;
     }).join('\n')
     : 'No members listed';
 
+  const familyName = shouldMaskAvailableFamilyForRole(role, availability)
+    ? maskFamilyNameLeading(point.familyName || '-')
+    : (point.familyName || '-');
+
   return [
     `Road name: ${point.roadName || '-'}`,
     `Family number: ${point.familyNumber || '-'}`,
-    `Family Name: ${point.familyName || '-'}`,
+    `Family Name: ${familyName}`,
     `Flat No: ${point.flatNumber || '-'}`,
     'Family members details:',
     memberLines,
@@ -183,3 +294,20 @@ export const normalizeVoterForInfo = (voter = {}, boothId) => ({
   boothNo: voter.boothNo || voter.boothInfo?.boothNo || '',
   wardCode: voter.wardCode || voter.boothInfo?.wardCode || '',
 });
+
+export const normalizeFamilyRole = (role) => String(role || '').replace(/^ROLE_/, '').toUpperCase();
+
+/** Family analysis table/map: assembly, ward, and admin roles only (not booth). */
+export const canViewFamilyAnalysis = (userInfo = {}) => {
+  const role = normalizeFamilyRole(userInfo?.role);
+  const level = String(
+    userInfo?.workingLevel || userInfo?.assignmentType || userInfo?.assignment_type || '',
+  )
+    .replace(/^ROLE_/, '')
+    .toUpperCase();
+
+  if (role === 'BOOTH' || level === 'BOOTH') return false;
+  if (['SUPER_ADMIN', 'ADMIN', 'ASSEMBLY', 'WARD'].includes(role)) return true;
+  if (role === 'USER' && ['ASSEMBLY', 'WARD'].includes(level)) return true;
+  return ['ASSEMBLY', 'WARD'].includes(level);
+};

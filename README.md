@@ -1,5 +1,16 @@
 This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
+## Play Store & App Store
+
+See **[docs/STORE_RELEASE_GUIDE.md](docs/STORE_RELEASE_GUIDE.md)** for the full release checklist, what was prepared on your machine, and what only you can provide (developer accounts, privacy policy, screenshots).
+
+Quick Android build for Google Play:
+
+```sh
+npm run release:android
+# Upload: android/app/build/outputs/bundle/release/app-release.aab
+```
+
 # Getting Started
 
 > **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.

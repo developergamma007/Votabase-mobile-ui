@@ -10,7 +10,7 @@ import {
   StatusBar,
   ScrollView,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CRUDAPI } from "../../apis/Api";
@@ -19,10 +19,9 @@ import { AuthContext } from "../../context/AuthContext";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import LinearGradient from "react-native-linear-gradient";
 
-const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-const isCompact = SCREEN_HEIGHT < 700;
-
 const LoginScreen = () => {
+  const { height: windowHeight } = useWindowDimensions();
+  const isCompact = windowHeight < 700;
   const { updateToken, setUserInfo } = useContext(AuthContext);
   const [firstName, setFirstName] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
@@ -97,12 +96,14 @@ const LoginScreen = () => {
           behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <ScrollView
+            style={styles.scroll}
             contentContainerStyle={[
               styles.scrollContent,
               {
                 paddingHorizontal: horizontalPad,
                 paddingTop: Platform.OS === "android" ? 20 : 12,
                 paddingBottom: 24,
+                minHeight: windowHeight,
               },
             ]}
             keyboardShouldPersistTaps="handled"
@@ -207,18 +208,25 @@ const LoginScreen = () => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    width: "100%",
     backgroundColor: "#020617",
   },
   safe: {
     flex: 1,
+    width: "100%",
   },
   flex: {
     flex: 1,
+    width: "100%",
+  },
+  scroll: {
+    flex: 1,
+    width: "100%",
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: "center",
-    minHeight: Platform.OS === "android" ? SCREEN_HEIGHT * 0.88 : undefined,
+    width: "100%",
   },
   header: {
     alignItems: "center",

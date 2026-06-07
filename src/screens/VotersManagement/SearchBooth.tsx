@@ -7,7 +7,7 @@ import DropDownPicker from 'react-native-dropdown-picker';
 import { ScrollView } from 'react-native-gesture-handler';
 import LinearGradient from 'react-native-linear-gradient';
 import { bgColors } from '../../constants/colors';
-import { CRUDAPI, getAssemblyCode } from '../../apis/Api';
+import { CRUDAPI, ensureUserProfileReady, getAssemblyCode } from '../../apis/Api';
 
 export default function SearchBooth() {
   const navigation = useNavigation();
@@ -78,6 +78,7 @@ export default function SearchBooth() {
 
   useEffect(() => {
     const init = async () => {
+      await ensureUserProfileReady();
       const current = await getAssemblyCode();
       setSelectedAsm(current);
       await fetchAssemblies();

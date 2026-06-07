@@ -1,10 +1,11 @@
 // screens/Logs.js
 import React, { useEffect, useState, useRef } from "react";
-import { View, Text, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { getLogs, clearLogs, updateLogStatus } from "../../components/LogsHelpers";
 import { useNavigation } from '@react-navigation/native';
 import { CRUDAPI } from "../../apis/Api";
 import { bgColors } from "../../constants/colors";
+import { openVoterInfoWithQuickLocation } from "../../helpers/voterLocationNavigation";
 
 export default function Logs() {
   const [items, setItems] = useState([]);
@@ -133,7 +134,15 @@ export default function Logs() {
                 </Text>
               )}
             </View>
-            <TouchableOpacity className={`${bgColors.gray800} px-4 py-2 rounded-lg`} onPress={() => navigation.navigate("Voter Info", { voter: item.voter, booth: item.booth })}>
+            <TouchableOpacity
+              className={`${bgColors.gray800} px-4 py-2 rounded-lg`}
+              onPress={() => openVoterInfoWithQuickLocation(
+                navigation,
+                item.voter,
+                item.booth,
+                (msg) => Alert.alert("Location required", msg),
+              )}
+            >
               <Text className="text-white font-semibold text-sm">Open Voter</Text>
             </TouchableOpacity>
           </View>

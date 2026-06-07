@@ -1,0 +1,26 @@
+Copy everything below into Google Play Console → Policy and programs → App content → App access.
+
+---
+
+All or some functionality is restricted.
+
+Instructions for login:
+
+1. Install and open the Votabase app.
+2. On the login screen, enter the credentials exactly as shown (case-sensitive).
+3. Tap LOGIN.
+
+Demo account (for Google Play review only):
+
+First name: admin@iswot.io
+Mobile number: 8867038709
+
+Notes:
+- The first field is labeled "First name" on the app, but enter the full value admin@iswot.io (this is the registered account name, not an email field label).
+- Mobile number is 10 digits with no spaces or country code.
+- After login, reviewers can use Search Voter, Voters Family, maps, and other volunteer features.
+- Location permission is optional and used only for map and household location capture.
+
+Support contact: admin@iswot.in
+
+Privacy policy: https://votabase.iswot.in/ui/privacy
