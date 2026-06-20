@@ -1,6 +1,69 @@
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PermissionsAndroid, Platform } from "react-native";
 import Geolocation from 'react-native-geolocation-service';
+
+export type CapturedLocation = {
+    latitude: number;
+    longitude: number;
+    accuracy?: number | null;
+};
+
+const LOCATION_CACHE_KEY = 'votabase_last_location';
+const LOCATION_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+
+let memoryLocationCache: { location: CapturedLocation; timestamp: number } | null = null;
+
+const getCachedLocation = async (): Promise<CapturedLocation | null> => {
+    if (memoryLocationCache && Date.now() - memoryLocationCache.timestamp < LOCATION_CACHE_MAX_AGE_MS) {
+        return memoryLocationCache.location;
+    }
+    try {
+        const raw = await AsyncStorage.getItem(LOCATION_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed?.latitude || !parsed?.longitude || !parsed?.timestamp) return null;
+        if (Date.now() - parsed.timestamp > LOCATION_CACHE_MAX_AGE_MS) return null;
+        const location = {
+            latitude: parsed.latitude,
+            longitude: parsed.longitude,
+            accuracy: parsed.accuracy ?? null,
+        };
+        memoryLocationCache = { location, timestamp: parsed.timestamp };
+        return location;
+    } catch {
+        return null;
+    }
+};
+
+const getStaleCachedLocation = async (): Promise<CapturedLocation | null> => {
+    if (memoryLocationCache?.location) return memoryLocationCache.location;
+    try {
+        const raw = await AsyncStorage.getItem(LOCATION_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed?.latitude || !parsed?.longitude) return null;
+        return {
+            latitude: parsed.latitude,
+            longitude: parsed.longitude,
+            accuracy: parsed.accuracy ?? null,
+        };
+    } catch {
+        return null;
+    }
+};
+
+const setCachedLocation = async (location: CapturedLocation) => {
+    const timestamp = Date.now();
+    memoryLocationCache = { location, timestamp };
+    try {
+        await AsyncStorage.setItem(
+            LOCATION_CACHE_KEY,
+            JSON.stringify({ ...location, timestamp }),
+        );
+    } catch {
+        /* best-effort */
+    }
+};
 
 const requestLocationPermission = async () => {
     if (Platform.OS === 'ios') {
@@ -20,18 +83,14 @@ const requestLocationPermission = async () => {
     return fine || coarse;
 };
 
-export type CapturedLocation = {
-    latitude: number;
-    longitude: number;
-    accuracy?: number | null;
-};
-
 export type GetLocationOptions = {
     /** When true, waits for a fresh GPS fix (no cached/network-only position). */
     requireHighAccuracy?: boolean;
     maxAccuracyMeters?: number;
     /** Household GPS button — network/cell first, multiple fallbacks. */
     fastHousehold?: boolean;
+    /** Opening voter info — cache first, short timeouts, mandatory fix. */
+    quickVoterCard?: boolean;
 };
 
 /** Use for voter / family / meeting coordinates saved to the server. */
@@ -43,6 +102,7 @@ export const ACCURATE_GPS_OPTIONS: GetLocationOptions = {
 /** Fast fix when opening voter info from a list (cached OK). */
 export const QUICK_GPS_OPTIONS: GetLocationOptions = {
     requireHighAccuracy: false,
+    quickVoterCard: true,
 };
 
 /** Household GPS button — works indoors better than strict GPS-only mode. */
@@ -106,50 +166,25 @@ const watchForAccurateGpsFix = (
         }, timeoutMs);
     });
 
-const watchForFirstGeoFix = (
-    timeoutMs: number,
-    enableHighAccuracy: boolean,
-): Promise<CapturedLocation> =>
-    new Promise((resolve, reject) => {
-        let settled = false;
-        const watchId = Geolocation.watchPosition(
-            (pos) => {
-                if (settled) return;
-                settled = true;
-                Geolocation.clearWatch(watchId);
-                clearTimeout(timer);
-                resolve(coordsFromPosition(pos));
-            },
-            () => {
-                /* wait for first fix or timeout */
-            },
-            {
-                enableHighAccuracy,
-                distanceFilter: 0,
-                interval: 1000,
-                fastestInterval: 500,
-                ...(Platform.OS === 'android'
-                    ? { forceRequestLocation: true, showLocationDialog: true }
-                    : {}),
-            },
-        );
-        const timer = setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            Geolocation.clearWatch(watchId);
-            reject(new Error('Location request timed out.'));
-        }, timeoutMs);
-    });
-
 const HOUSEHOLD_GPS_TIMEOUT_MSG =
     'Could not get your location. Use Pin Mark on the map (drag/tap), or allow location and retry GPS near a window.';
+
+const VOTER_LOCATION_REQUIRED_MSG = 'Location is required to view voter info.';
 
 export const GetCurrentLocation = async (
     options: GetLocationOptions = {},
 ): Promise<CapturedLocation | null> => {
-    const { requireHighAccuracy = false, maxAccuracyMeters = 20, fastHousehold = false } = options;
+    const {
+        requireHighAccuracy = false,
+        maxAccuracyMeters = 20,
+        fastHousehold = false,
+        quickVoterCard = false,
+    } = options;
     const hasPermission = await requestLocationPermission();
-    if (!hasPermission) return null;
+    if (!hasPermission) {
+        if (quickVoterCard) throw new Error('Location permission denied. Please allow location access to view voter info.');
+        return null;
+    }
 
     const geoOptions: Geolocation.GeoOptions = {
         enableHighAccuracy: requireHighAccuracy,
@@ -162,13 +197,44 @@ export const GetCurrentLocation = async (
 
     try {
         if (requireHighAccuracy) {
-            return await watchForAccurateGpsFix(maxAccuracyMeters, 25000);
+            const result = await watchForAccurateGpsFix(maxAccuracyMeters, 25000);
+            await setCachedLocation(result);
+            return result;
+        }
+        if (quickVoterCard) {
+            const cached = await getCachedLocation();
+            if (cached) return cached;
+
+            const androidExtras = Platform.OS === 'android'
+                ? { forceRequestLocation: true, showLocationDialog: true }
+                : {};
+            const tries: Geolocation.GeoOptions[] = [
+                { enableHighAccuracy: false, timeout: 3000, maximumAge: 300000 },
+                { enableHighAccuracy: false, timeout: 6000, maximumAge: 120000 },
+                { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
+            ];
+            for (const opts of tries) {
+                try {
+                    const pos = await getCurrentPosition({ ...opts, ...androidExtras });
+                    const result = coordsFromPosition(pos);
+                    await setCachedLocation(result);
+                    return result;
+                } catch {
+                    /* next strategy */
+                }
+            }
+
+            const stale = await getStaleCachedLocation();
+            if (stale) return stale;
+
+            throw new Error(VOTER_LOCATION_REQUIRED_MSG);
         }
         if (fastHousehold) {
+            // Simple two-step: cached/network fix first (usually instant),
+            // then one fresh high-accuracy attempt.
             const tries: Geolocation.GeoOptions[] = [
-                { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
-                { enableHighAccuracy: true, timeout: 8000, maximumAge: 120000 },
-                { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 },
+                { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
             ];
             for (const opts of tries) {
                 try {
@@ -178,28 +244,22 @@ export const GetCurrentLocation = async (
                             ? { forceRequestLocation: true, showLocationDialog: true }
                             : {}),
                     });
-                    return coordsFromPosition(pos);
+                    const result = coordsFromPosition(pos);
+                    await setCachedLocation(result);
+                    return result;
                 } catch {
                     /* next */
                 }
             }
-            try {
-                return await watchForFirstGeoFix(10000, false);
-            } catch {
-                /* fall through */
-            }
-            try {
-                return await watchForFirstGeoFix(8000, true);
-            } catch {
-                /* fall through */
-            }
             throw new Error(HOUSEHOLD_GPS_TIMEOUT_MSG);
         }
         const pos = await getCurrentPosition(geoOptions);
-        return coordsFromPosition(pos);
+        const result = coordsFromPosition(pos);
+        await setCachedLocation(result);
+        return result;
     } catch (error) {
-        if (fastHousehold) {
-            const message = error instanceof Error ? error.message : HOUSEHOLD_GPS_TIMEOUT_MSG;
+        if (quickVoterCard || fastHousehold) {
+            const message = error instanceof Error ? error.message : VOTER_LOCATION_REQUIRED_MSG;
             throw new Error(message);
         }
         if (!requireHighAccuracy) return null;

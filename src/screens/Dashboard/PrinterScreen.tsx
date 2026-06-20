@@ -6,7 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
 import { AuthContext } from "../../context/AuthContext";
 import { PrinterHelper } from "../../components/PrinterHelper";
-import DropDownPicker from "react-native-dropdown-picker";
+import { AppDropdown } from "../../components/AppDropdown";
 import FeatureComingSoon, { isVotabaseSuperAdmin } from "../../components/FeatureComingSoon";
 
 export default function PrinterScreen() {
@@ -18,8 +18,7 @@ export default function PrinterScreen() {
 
     // Ward / Booth / Voter state
     const [wards, setWards] = useState<any[]>([]);
-    const [selectedWard, setSelectedWard] = useState(null);
-    const [openWard, setOpenWard] = useState(false); // for dropdown
+    const [selectedWard, setSelectedWard] = useState<string | null>(null);
     const [booths, setBooths] = useState<any[]>([]);
     const [selectedBooth, setSelectedBooth] = useState('');
     const [voters, setVoters] = useState<any[]>([]);
@@ -29,7 +28,6 @@ export default function PrinterScreen() {
     
     // Context
     const [assemblyCode, setAssemblyCode] = useState('');
-    const [openAssembly, setOpenAssembly] = useState(false);
     const [assemblyItems, setAssemblyItems] = useState<any[]>([]);
 
     useEffect(() => {
@@ -156,26 +154,16 @@ export default function PrinterScreen() {
                 
                 {/* Context Assembly Dropdown */}
                 <View className="z-50 mb-3" style={{ paddingHorizontal: 2 }}>
-                    <DropDownPicker
-                        open={openAssembly}
+                    <AppDropdown
                         value={assemblyCode}
                         items={assemblyItems}
-                        setOpen={setOpenAssembly}
-                        setValue={setAssemblyCode}
-                        setItems={setAssemblyItems}
-                        onOpen={() => setOpenWard(false)}
+                        onChange={setAssemblyCode}
                         placeholder="Select Context..."
-                        style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
-                        dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
-                        textStyle={{ fontSize: 14, fontWeight: '700', color: '#0f172a' }}
-                        placeholderStyle={{ color: '#94A3B8' }}
-                        zIndex={2000}
-                        zIndexInverse={1000}
                     />
                 </View>
 
                 {/* Main Unified Web-Like Card */}
-                <View style={{ backgroundColor: '#ffffff', borderRadius: 16, borderColor: '#e2e8f0', borderWidth: 1, overflow: 'hidden', marginBottom: 24, elevation: 1, shadowColor: '#94a3b8', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 }}>
+                <View style={{ backgroundColor: '#ffffff', borderRadius: 20, borderColor: '#e2e8f0', borderWidth: 1, overflow: 'hidden', marginBottom: 24, shadowColor: '#0F172A', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 24, elevation: 6 }}>
                     
                     {/* Header Banner */}
                     <View style={{ padding: 16, paddingBottom: 0 }}>
@@ -245,22 +233,11 @@ export default function PrinterScreen() {
                     <View style={{ padding: 16 }}>
                         <Text style={{ fontSize: 14, color: '#334155', fontWeight: '600', marginBottom: 12 }}>Ward / Election Template</Text>
                         
-                        <DropDownPicker
-                            open={openWard}
+                        <AppDropdown
                             value={selectedWard}
                             items={wards}
-                            setOpen={setOpenWard}
-                            setValue={setSelectedWard}
-                            onOpen={() => setOpenAssembly(false)}
+                            onChange={setSelectedWard}
                             placeholder="Select Ward..."
-                            style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 8, minHeight: 44 }}
-                            dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 8 }}
-                            textStyle={{ fontSize: 14, color: '#334155' }}
-                            placeholderStyle={{ color: '#94A3B8' }}
-                            listMode="SCROLLVIEW"
-                            scrollViewProps={{ nestedScrollEnabled: true }}
-                            zIndex={1000}
-                            zIndexInverse={2000}
                         />
 
                         {printTemplate && (

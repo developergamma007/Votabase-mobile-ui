@@ -181,7 +181,7 @@ export default function Families() {
                     filteredFamilies.map((item: any, familyIndex: number) => (
                         <TouchableOpacity
                             key={`${String(item?.familyId || item?.familyName || "family")}-${familyIndex}`}
-                            className={`${bgColors.white} p-4 rounded-2xl shadow-sm mb-3`}
+                            className="premium-card p-4 mb-3"
                             onPress={() => (navigation as any).navigate("voterFamilyDetails", { family: item, associationName: getAssociationName(item.associationId), boothId:boothId })}
                         >
                             <View className="flex-row justify-between items-center">

@@ -6,6 +6,28 @@ export const FAMILY_AVAILABILITY_OPTIONS = [
   'Door Closed',
 ];
 
+export const FAMILY_AVAILABILITY_COLORS = {
+  Available: '#3B82F6',
+  'Not Available': '#F97316',
+  'Entry Denied': '#EAB308',
+  'Data not Given': '#A855F7',
+  'Door Closed': '#EF4444',
+};
+
+export const FAMILY_AVAILABILITY_EMOJI = {
+  Available: '🔵',
+  'Not Available': '🟠',
+  'Entry Denied': '🟡',
+  'Data not Given': '🟣',
+  'Door Closed': '🔴',
+};
+
+export const formatFamilyAvailabilityLabel = (label) => {
+  const key = String(label || '').trim();
+  const emoji = FAMILY_AVAILABILITY_EMOJI[key];
+  return emoji ? `${key} ${emoji}` : key;
+};
+
 export const maskFamilySensitiveValue = (value) => {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -284,12 +306,37 @@ export const sortFamiliesByNumber = (families = []) =>
 /** @deprecated Use sortFamiliesByNumber */
 export const sortFamiliesByName = sortFamiliesByNumber;
 
+/** Build a voter payload for Voter Info from a family member row (API or form). */
+export const buildVoterFromFamilyMember = (member = {}, fallback = {}) => {
+  const raw = member.rawVoter && typeof member.rawVoter === 'object' ? member.rawVoter : member;
+  const voterName = String(member.voterName || member.name || raw.voterName || '').trim();
+  const firstMiddle = String(
+    raw.firstMiddleNameEn || raw.first_middle_name_en || raw.name_en || raw.name || voterName
+  ).trim();
+  const lastName = String(raw.lastNameEn || raw.last_name_en || '').trim();
+  const epicNo = raw.epicNo || member.epicNo || member.epic || '';
+  const boothId = member.boothId || raw.boothId || raw.booth_id || fallback.boothId || '';
+  return {
+    ...raw,
+    epicNo,
+    voterName: voterName || firstMiddle,
+    firstMiddleNameEn: firstMiddle || voterName,
+    lastNameEn: lastName,
+    name: voterName || firstMiddle,
+    boothId,
+    boothNo: raw.boothNo || member.boothNo || fallback.boothNo || '',
+    wardCode: raw.wardCode || member.wardCode || fallback.wardCode || '',
+    wardNameEn: raw.wardNameEn || member.wardNameEn || fallback.wardNameEn || '',
+  };
+};
+
 export const normalizeVoterForInfo = (voter = {}, boothId) => ({
   ...voter,
   epicNo: voter.epicNo || voter.epic || '',
   voterId: voter.voterId ?? voter.id,
-  firstMiddleNameEn: voter.firstMiddleNameEn || voter.name || voter.voterName || '',
-  lastNameEn: voter.lastNameEn || '',
+  firstMiddleNameEn:
+    voter.firstMiddleNameEn || voter.name_en || voter.name || voter.voterName || '',
+  lastNameEn: voter.lastNameEn || voter.last_name_en || '',
   boothId: voter.boothId || voter.boothInfo?.boothId || boothId || '',
   boothNo: voter.boothNo || voter.boothInfo?.boothNo || '',
   wardCode: voter.wardCode || voter.boothInfo?.wardCode || '',
@@ -310,4 +357,93 @@ export const canViewFamilyAnalysis = (userInfo = {}) => {
   if (['SUPER_ADMIN', 'ADMIN', 'ASSEMBLY', 'WARD'].includes(role)) return true;
   if (role === 'USER' && ['ASSEMBLY', 'WARD'].includes(level)) return true;
   return ['ASSEMBLY', 'WARD'].includes(level);
+};
+
+/** Booth-level field login — hide ward-wide family list (data theft risk). */
+export const isBoothLevelLogin = (userInfo = {}) => {
+  const role = normalizeFamilyRole(userInfo?.role);
+  const level = String(
+    userInfo?.workingLevel || userInfo?.assignmentType || userInfo?.assignment_type || '',
+  )
+    .replace(/^ROLE_/, '')
+    .toUpperCase();
+  return role === 'BOOTH' || level === 'BOOTH';
+};
+
+/**
+ * Map GET /family/{id} DTO into New Family form state (mobile member shape).
+ * @param {object} fam
+ * @param {{ wardItems?: Array<{ label: string; value: string; wardCode?: string }> }} [options]
+ */
+export const mapFamilyDtoToFormState = (fam = {}, { wardItems = [] } = {}) => {
+  const headMember = (fam.members || []).find((m) => m.head || m.is_head) || (fam.members || [])[0];
+  const mappedMembers = (fam.members || []).map((m) => {
+    const rawVoter = buildVoterFromFamilyMember(m, {
+      boothId: fam.boothId,
+      boothNo: fam.boothNo,
+      wardCode: fam.wardCode,
+    });
+    const voterName =
+      String(m.voterName || m.name || '').trim()
+      || [rawVoter?.firstMiddleNameEn, rawVoter?.lastNameEn].filter(Boolean).join(' ').trim()
+      || m.epicNo
+      || 'Member';
+    return {
+      epicNo: m.epicNo || rawVoter?.epicNo || '',
+      voterName,
+      phone: getVoterPhoneDisplay(rawVoter) || m.phone || '',
+      relationName: m.relationName || m.rel_eng || getVoterRelationDisplay(rawVoter) || '',
+      houseNo: getVoterHouseDisplay(rawVoter) || m.houseNo || '',
+      boothId: m.boothId || fam.boothId || rawVoter?.boothId || '',
+      rawVoter,
+    };
+  });
+
+  const headEpicNo = fam.headEpicNo || headMember?.epicNo || mappedMembers[0]?.epicNo || '';
+
+  let resolvedWardId = fam.wardId ?? fam.ward_id;
+  resolvedWardId = resolvedWardId != null ? String(resolvedWardId) : '';
+  const wardCodeFromFamily = fam.wardCode ?? fam.ward_code;
+  if (!resolvedWardId && wardCodeFromFamily && wardItems.length) {
+    const byCode = wardItems.find((w) => String(w.wardCode) === String(wardCodeFromFamily));
+    if (byCode) resolvedWardId = byCode.value;
+  }
+  const matchedWard = wardItems.find((w) => String(w.value) === String(resolvedWardId));
+
+  const location =
+    fam.latitude != null && fam.longitude != null
+      ? { latitude: Number(fam.latitude), longitude: Number(fam.longitude) }
+      : null;
+
+  return {
+    familyName: fam.familyName || '',
+    roadName: fam.roadName || '',
+    buildingNumber: fam.buildingNumber || '',
+    buildingName: fam.buildingName || '',
+    flatNumber: fam.flatNumber || '',
+    familyNumber: fam.familyNumber || '',
+    tagLeader: fam.tagLeader || '',
+    familyAvailability: fam.familyAvailability || 'Available',
+    buildingAddress: fam.buildingAddress || fam.familyAddress || '',
+    hasAssociation: Boolean(fam.hasAssociation),
+    associationName: fam.associationName || '',
+    associationHeadName: fam.associationHeadName || '',
+    associationHeadPhone: fam.associationHeadPhone || '',
+    headPhone: fam.phone || '',
+    economicStatus: fam.economicStatus || 'NA',
+    familyNature: fam.familyNature || 'NA',
+    familyPoints: String(fam.points ?? '5'),
+    members: mappedMembers,
+    headEpicNo,
+    location,
+    selectedWardId: resolvedWardId,
+    editingFamilyMeta: {
+      familyId: fam.familyId,
+      boothId: fam.boothId,
+      wardId: fam.wardId ?? fam.ward_id ?? (resolvedWardId ? Number(resolvedWardId) : null),
+      wardCode: wardCodeFromFamily || matchedWard?.wardCode,
+      wardLabel: matchedWard?.label,
+      familyNumber: fam.familyNumber,
+    },
+  };
 };

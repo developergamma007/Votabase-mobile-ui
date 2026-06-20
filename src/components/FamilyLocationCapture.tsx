@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
 import { WebView } from "react-native-webview";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -34,6 +34,34 @@ export default function FamilyLocationCapture({
   const [gpsLoading, setGpsLoading] = useState(false);
   const [pinHint, setPinHint] = useState("");
   const pinMarkedRef = useRef(false);
+  const locationRef = useRef(location);
+  locationRef.current = location;
+
+  // Auto-center the map on the phone's current location when opening
+  // without a saved location (silent — user can still tap GPS or pin).
+  useEffect(() => {
+    if (locationRef.current?.latitude != null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pos = await GetCurrentLocation(FAST_HOUSEHOLD_GPS_OPTIONS);
+        if (cancelled || locationRef.current?.latitude != null) return;
+        if (!pos?.latitude || !pos?.longitude) return;
+        onLocationChange({
+          latitude: Number(pos.latitude),
+          longitude: Number(pos.longitude),
+          accuracy: pos.accuracy ?? null,
+          source: "gps",
+        });
+        setMapKey((k) => k + 1);
+      } catch {
+        /* keep default map center */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const mapHtml = useMemo(() => {
     const lat = location?.latitude ?? 12.9716;
@@ -138,6 +166,9 @@ export default function FamilyLocationCapture({
       <View
         className="border border-dashed border-slate-300 rounded-2xl overflow-hidden bg-slate-50"
         style={{ height: MAP_HEIGHT }}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderTerminationRequest={() => false}
       >
         {mapHtml ? (
           <WebView
@@ -147,6 +178,7 @@ export default function FamilyLocationCapture({
             javaScriptEnabled
             domStorageEnabled
             scrollEnabled={false}
+            nestedScrollEnabled
             onMessage={onMapMessage}
             style={{ flex: 1 }}
           />
@@ -160,30 +192,32 @@ export default function FamilyLocationCapture({
       ) : null}
       {pinHint ? <Text className="text-emerald-700 text-xs mt-1 text-center font-semibold">{pinHint}</Text> : null}
 
-      <TouchableOpacity
-        className={`mt-3 rounded-2xl py-4 flex-row items-center justify-center ${gpsLoading ? "bg-slate-400" : "bg-blue-600"}`}
-        onPress={captureGps}
-        disabled={gpsLoading}
-      >
-        {gpsLoading ? (
-          <ActivityIndicator color="#fff" size="small" />
-        ) : (
-          <Ionicons name="location-outline" size={20} color="#fff" />
-        )}
-        <Text className="text-white font-bold text-[14px] ml-2">
-          {gpsLoading ? "Capturing GPS…" : "Capture Household Location (GPS)"}
-        </Text>
-      </TouchableOpacity>
+      <View className="mt-3 flex-row gap-2">
+        <TouchableOpacity
+          className={`flex-1 rounded-2xl py-3 flex-row items-center justify-center ${gpsLoading ? "bg-slate-400" : "bg-blue-600"}`}
+          onPress={captureGps}
+          disabled={gpsLoading}
+        >
+          {gpsLoading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Ionicons name="location-outline" size={18} color="#fff" />
+          )}
+          <Text className="text-white font-bold text-[12px] ml-1.5" numberOfLines={2}>
+            {gpsLoading ? "GPS…" : "GPS Location"}
+          </Text>
+        </TouchableOpacity>
 
-      <TouchableOpacity
-        className="mt-2 rounded-2xl py-4 flex-row items-center justify-center bg-slate-600"
-        onPress={confirmPinMark}
-      >
-        <Ionicons name="pin-outline" size={20} color="#fff" />
-        <Text className="text-white font-bold text-[14px] ml-2">
-          Capture Household Location (Pin Mark)
-        </Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          className="flex-1 rounded-2xl py-3 flex-row items-center justify-center bg-slate-600"
+          onPress={confirmPinMark}
+        >
+          <Ionicons name="pin-outline" size={18} color="#fff" />
+          <Text className="text-white font-bold text-[12px] ml-1.5" numberOfLines={2}>
+            Pin Mark
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }

@@ -3,8 +3,8 @@ import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator,
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
 import { AuthContext } from "../../context/AuthContext";
-import DropDownPicker from "react-native-dropdown-picker";
-import FeatureComingSoon, { isVotabaseSuperAdmin } from "../../components/FeatureComingSoon";
+import { AppDropdown } from "../../components/AppDropdown";
+import FeatureComingSoon, { isAdminIswotUser, isVotabaseSuperAdmin } from "../../components/FeatureComingSoon";
 
 const POLL_PAGE_SIZE = 100;
 
@@ -36,10 +36,8 @@ export default function PollDayVoters() {
   const [globalPollDayEnabled, setGlobalPollDayEnabled] = useState(false);
 
   const [assemblyCode, setAssemblyCode] = useState("");
-  const [openAssembly, setOpenAssembly] = useState(false);
   const [assemblyItems, setAssemblyItems] = useState<any[]>([]);
 
-  const [openNature, setOpenNature] = useState(false);
   const [natureItems, setNatureItems] = useState([
     { label: "Nature", value: "" },
     { label: "A", value: "A" },
@@ -50,27 +48,32 @@ export default function PollDayVoters() {
 
   const pollSearchTimerRef = useRef<any>(null);
   const isSuperAdmin = isVotabaseSuperAdmin(userInfo);
+  const canSwitchAssembly = isAdminIswotUser(userInfo);
 
   useEffect(() => {
     const init = async () => {
       const code = await getAssemblyCode();
       setAssemblyCode(code);
-      try {
-        const dropdownResp = await CRUDAPI.getAssemblyDropdown();
-        const payload = dropdownResp?.data?.result || dropdownResp?.result || dropdownResp?.data || [];
-        const items = Array.isArray(payload)
-          ? payload.map((a: any) => ({
-              label: a?.name || a?.label || a?.assemblyName || `${a?.code || a?.assemblyCode || ""}`,
-              value: a?.code || a?.assemblyCode || String(a?.id || code),
-            }))
-          : [];
-        setAssemblyItems(items.length ? items : [{ label: String(code), value: String(code) }]);
-      } catch {
-        setAssemblyItems([{ label: String(code), value: String(code) }]);
+      if (canSwitchAssembly) {
+        try {
+          const dropdownResp = await CRUDAPI.getAssemblyDropdown();
+          const payload = dropdownResp?.data?.result || dropdownResp?.result || dropdownResp?.data || [];
+          const items = Array.isArray(payload)
+            ? payload.map((a: any) => ({
+                label: a?.name || a?.label || a?.assemblyName || `${a?.code || a?.assemblyCode || ""}`,
+                value: a?.code || a?.assemblyCode || String(a?.id || code),
+              }))
+            : [];
+          setAssemblyItems(items.length ? items : [{ label: String(code), value: String(code) }]);
+        } catch {
+          setAssemblyItems([{ label: String(code), value: String(code) }]);
+        }
+      } else {
+        setAssemblyItems([]);
       }
     };
     init();
-  }, []);
+  }, [canSwitchAssembly]);
 
   useEffect(() => {
     const checkActivation = async () => {
@@ -277,21 +280,16 @@ export default function PollDayVoters() {
         onScroll={handleScroll}
         scrollEventThrottle={200}
       >
-        <View className="bg-white border border-slate-200 rounded-2xl px-4 py-3 mb-3 z-30">
-          <Text className="text-slate-500 text-xs font-bold mb-1">CONTEXT</Text>
-          <DropDownPicker
-            open={openAssembly}
-            value={assemblyCode}
-            items={assemblyItems}
-            setOpen={setOpenAssembly}
-            setValue={setAssemblyCode}
-            setItems={setAssemblyItems}
-            style={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12, minHeight: 46 }}
-            dropDownContainerStyle={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12 }}
-            textStyle={{ fontSize: 14, fontWeight: "700", color: "#0f172a" }}
-            placeholderStyle={{ color: "#94A3B8" }}
-          />
-        </View>
+        {canSwitchAssembly ? (
+          <View className="bg-white border border-slate-200 rounded-2xl px-4 py-3 mb-3 z-30">
+            <Text className="text-slate-500 text-xs font-bold mb-1">CONTEXT</Text>
+            <AppDropdown
+              value={assemblyCode}
+              items={assemblyItems}
+              onChange={setAssemblyCode}
+            />
+          </View>
+        ) : null}
 
         {isSuperAdmin ? (
           <View className="bg-white border border-slate-200 rounded-2xl px-4 py-3 mb-3">
@@ -312,10 +310,10 @@ export default function PollDayVoters() {
           </View>
         ) : null}
 
-        <View className="bg-white border border-slate-200 rounded-xl px-3 py-2 flex-row items-center">
+        <View className="premium-input flex-row items-center px-3 py-2">
           <Icon name="search" size={18} color="#94a3b8" />
           <TextInput
-            className="flex-1 ml-2 text-black text-[13px]"
+            className="flex-1 ml-2 text-black text-[13px] bg-transparent"
             placeholder="Search voter by EPIC or name"
             value={pollQuery}
             onChangeText={(v) => {
@@ -367,17 +365,10 @@ export default function PollDayVoters() {
         </ScrollView>
 
         <View className="mt-3 z-20">
-          <DropDownPicker
-            open={openNature}
+          <AppDropdown
             value={natureFilter}
             items={natureItems}
-            setOpen={setOpenNature}
-            setValue={setNatureFilter}
-            setItems={setNatureItems}
-            style={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12, minHeight: 42 }}
-            dropDownContainerStyle={{ backgroundColor: "#ffffff", borderColor: "#CBD5E1", borderRadius: 12 }}
-            textStyle={{ fontSize: 14, color: "#1E293B", fontWeight: "600" }}
-            placeholderStyle={{ color: "#94A3B8" }}
+            onChange={setNatureFilter}
           />
         </View>
 
@@ -392,7 +383,7 @@ export default function PollDayVoters() {
 
         <View className="mt-3">
           {filteredPollVoters.map((v, idx) => (
-            <View key={`${String(v?.id || v?.epic || v?.name || "poll-voter")}-${idx}`} className="bg-white rounded-xl p-4 mb-3 border border-slate-200">
+            <View key={`${String(v?.id || v?.epic || v?.name || "poll-voter")}-${idx}`} className="premium-card p-4 mb-3">
               <View className="flex-row">
                 <View className="h-10 w-10 bg-blue-600 rounded-full items-center justify-center mr-3">
                   <Text className="text-white font-bold text-[16px]">{String(v.name || "U").charAt(0)}</Text>

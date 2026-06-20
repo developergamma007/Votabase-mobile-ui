@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { CRUDAPI } from "../../apis/Api";
 import { bgColors } from "../../constants/colors";
 import { openVoterInfoWithQuickLocation } from "../../helpers/voterLocationNavigation";
+import { buildVoterPayloadFromForm, formStateFromVoter } from "../../helpers/voterUpdatePayload";
 
 export default function Logs() {
   const [items, setItems] = useState([]);
@@ -65,11 +66,13 @@ export default function Logs() {
       if (item) {
         const epicNo = item?.voter?.epicNo;
         try {
-          const transformedReq = {
-            updateLocationLat: item?.voter?.location && item?.voter?.location.latitude || 0,
-            updateLocationLng: item?.voter?.location && item?.voter?.location.longitude || 0,
-            updateRequest: item.voter
-          };
+          const updateRequest = buildVoterPayloadFromForm(formStateFromVoter(item?.voter || {}));
+          const loc = item?.location || item?.voter?.location;
+          if (loc?.latitude && loc?.longitude) {
+            updateRequest.latitude = loc.latitude;
+            updateRequest.longitude = loc.longitude;
+          }
+          const transformedReq = { updateRequest };
           const res = await CRUDAPI.updateVoter(epicNo, transformedReq, {
             boothNo: item?.voter?.boothNo || item?.voter?.boothInfo?.boothNo,
             wardCode: item?.voter?.wardCode || item?.booth?.wardCode || item?.voter?.boothInfo?.wardCode,

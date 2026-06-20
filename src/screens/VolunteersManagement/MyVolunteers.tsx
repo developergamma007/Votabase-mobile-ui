@@ -10,7 +10,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import DropDownPicker from 'react-native-dropdown-picker';
+import { AppDropdown } from '../../components/AppDropdown';
 import { CRUDAPI, getAssemblyCode } from '../../apis/Api';
 import { AuthContext } from '../../context/AuthContext';
 import { premium } from '../../constants/premiumTheme';
@@ -31,8 +31,6 @@ export default function MyVolunteers() {
   const [assemblyId, setAssemblyId] = useState('');
 
   const [selected, setSelected] = useState<string[]>([]);
-  const [open, setOpen] = useState(false);
-  const [openSort, setOpenSort] = useState(false);
   const [workingLevel, setWorkingLevel] = useState('');
   const [sortMode, setSortMode] = useState('latest');
   const [items, setItems] = useState([
@@ -320,35 +318,23 @@ export default function MyVolunteers() {
               autoCapitalize="none"
             />
             <View style={styles.levelPicker}>
-              <DropDownPicker
-                open={open}
+              <AppDropdown
                 value={workingLevel}
                 items={items}
-                setOpen={setOpen}
-                setValue={setWorkingLevel}
-                setItems={setItems}
+                onChange={setWorkingLevel}
                 placeholder="All Levels"
                 style={styles.dropdown}
-                dropDownContainerStyle={styles.dropdownPanel}
-                textStyle={styles.dropdownText}
-                listMode="SCROLLVIEW"
               />
             </View>
           </View>
 
           <View style={{ zIndex: 900 }}>
-            <DropDownPicker
-              open={openSort}
+            <AppDropdown
               value={sortMode}
               items={sortItems}
-              setOpen={setOpenSort}
-              setValue={setSortMode}
-              setItems={setSortItems}
+              onChange={setSortMode}
               placeholder="Latest Created"
               style={styles.dropdown}
-              dropDownContainerStyle={styles.dropdownPanel}
-              textStyle={styles.dropdownText}
-              listMode="SCROLLVIEW"
             />
           </View>
 
@@ -561,11 +547,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
+    ...premium.shadow.soft,
     color: premium.text,
   },
   levelPicker: { width: 130, zIndex: 3000 },
-  dropdown: { borderColor: premium.border, minHeight: 46, borderRadius: premium.radius.md },
-  dropdownPanel: { borderColor: premium.border },
+  dropdown: { borderColor: premium.border, minHeight: 52, borderRadius: premium.radius.md, backgroundColor: premium.bgCard, ...premium.shadow.soft },
+  dropdownPanel: { borderColor: premium.border, ...premium.shadow.card },
   dropdownText: { fontSize: 13, fontWeight: '600', color: premium.text },
   statsRow: {
     flexDirection: 'row',

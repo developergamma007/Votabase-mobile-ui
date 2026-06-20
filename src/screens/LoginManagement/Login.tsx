@@ -48,7 +48,7 @@ const LoginScreen = () => {
     try {
       const response = await CRUDAPI.loginApi(jsonReq);
       if (response.success) {
-        const userData = response.data.result;
+        const userData = { ...response.data.result, phone: mobileNumber };
         await updateToken(userData.token);
         const loggedInUser = await AsyncStorage.getItem("loggedInUser");
 
@@ -60,6 +60,7 @@ const LoginScreen = () => {
         }
 
         await AsyncStorage.setItem("userInfo", JSON.stringify(userData));
+        await AsyncStorage.setItem("userPhone", mobileNumber);
         await AsyncStorage.setItem("token", userData.token);
         await AsyncStorage.setItem("X_INIT_TOKEN", userData.token);
         await AsyncStorage.setItem("role", userData.role || "");
@@ -197,7 +198,7 @@ const LoginScreen = () => {
               </Text>
             </View>
 
-            <Text style={styles.footer}>© 2024 Votabase. All rights reserved.</Text>
+            <Text style={styles.footer}>© 2026 Votabase. All rights reserved.</Text>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -255,19 +256,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   card: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 32,
+    backgroundColor: "rgba(15, 23, 42, 0.72)",
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(56, 189, 248, 0.14)",
+    overflow: "hidden",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.3,
-        shadowRadius: 20,
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.4,
+        shadowRadius: 28,
       },
       android: {
-        elevation: 6,
+        elevation: 0,
       },
     }),
   },
@@ -295,10 +297,10 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.5)",
-    borderRadius: 16,
+    backgroundColor: "rgba(2, 6, 23, 0.55)",
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "rgba(56, 189, 248, 0.18)",
     paddingHorizontal: 16,
     minHeight: 56,
   },
@@ -330,6 +332,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: "hidden",
     marginBottom: Platform.OS === "android" ? 20 : 24,
+    shadowColor: "#2563EB",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
   },
   loginBtn: {
     flex: 1,

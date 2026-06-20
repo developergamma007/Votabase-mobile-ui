@@ -4,9 +4,9 @@ import { CRUDAPI, getAssemblyCode } from '../../apis/Api';
 import { buildOsmWebViewHtml } from '../../config/osmMap';
 import { ACCURATE_GPS_OPTIONS, GetCurrentLocation } from '../../components/GetCurrentLocation';
 import { WebView } from 'react-native-webview';
-import DropDownPicker from 'react-native-dropdown-picker';
+import { AppDropdown } from '../../components/AppDropdown';
 import { AuthContext } from '../../context/AuthContext';
-import FeatureComingSoon, { isVotabaseSuperAdmin } from '../../components/FeatureComingSoon';
+import FeatureComingSoon, { isAdminIswotUser, isVotabaseSuperAdmin } from '../../components/FeatureComingSoon';
 
 const RECIPIENTS = [
   { key: 'assembly', label: 'Assembly' },
@@ -22,7 +22,6 @@ const CHANNELS = [
 export default function Meetings() {
   const { userInfo } = useContext(AuthContext) as any;
   const [assemblyCode, setAssemblyCode] = useState('');
-  const [openAssembly, setOpenAssembly] = useState(false);
   const [assemblyItems, setAssemblyItems] = useState<any[]>([]);
 
   const [activeMeetingTab, setActiveMeetingTab] = useState<'list' | 'new'>('list');
@@ -58,6 +57,7 @@ export default function Meetings() {
 
   const isSuperAdmin = String(userInfo?.role || '').replace('ROLE_', '').toUpperCase() === 'SUPER_ADMIN';
   const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(String(userInfo?.role || '').replace('ROLE_', '').toUpperCase());
+  const canSwitchAssembly = isAdminIswotUser(userInfo);
   const toSafeKey = (value: any, fallback: string) => {
     if (value === null || value === undefined) return fallback;
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -74,23 +74,27 @@ export default function Meetings() {
     const init = async () => {
       const code = await getAssemblyCode();
       setAssemblyCode(code);
-      try {
-        const dropdownResp = await CRUDAPI.getAssemblyDropdown();
-        const payload = dropdownResp?.data?.result || dropdownResp?.result || dropdownResp?.data || [];
-        const options = Array.isArray(payload)
-          ? payload.map((a: any) => ({
-              label: a?.name || a?.label || a?.assemblyName || String(a?.code || a?.assemblyCode || ''),
-              value: a?.code || a?.assemblyCode || String(a?.id || code),
-            }))
-          : [];
-        setAssemblyItems(options.length ? options : [{ label: String(code), value: String(code) }]);
-      } catch {
-        setAssemblyItems([{ label: String(code), value: String(code) }]);
+      if (canSwitchAssembly) {
+        try {
+          const dropdownResp = await CRUDAPI.getAssemblyDropdown();
+          const payload = dropdownResp?.data?.result || dropdownResp?.result || dropdownResp?.data || [];
+          const options = Array.isArray(payload)
+            ? payload.map((a: any) => ({
+                label: a?.name || a?.label || a?.assemblyName || String(a?.code || a?.assemblyCode || ''),
+                value: a?.code || a?.assemblyCode || String(a?.id || code),
+              }))
+            : [];
+          setAssemblyItems(options.length ? options : [{ label: String(code), value: String(code) }]);
+        } catch {
+          setAssemblyItems([{ label: String(code), value: String(code) }]);
+        }
+      } else {
+        setAssemblyItems([]);
       }
       fetchMeetingsList();
     };
     init();
-  }, []);
+  }, [canSwitchAssembly]);
 
   const fetchMeetingsList = async () => {
     try {
@@ -244,23 +248,18 @@ export default function Meetings() {
   return (
     <View className="flex-1 bg-[#EEF3FB]">
       <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 100 }}>
-        <View className="bg-white border border-slate-200 rounded-2xl px-4 py-3 mb-3 z-30">
-          <Text className="text-slate-500 text-xs font-bold mb-1">CONTEXT</Text>
-          <DropDownPicker
-            open={openAssembly}
-            value={assemblyCode}
-            items={assemblyItems}
-            setOpen={setOpenAssembly}
-            setValue={setAssemblyCode}
-            setItems={setAssemblyItems}
-            style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
-            dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
-            textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
-            placeholderStyle={{ color: '#94A3B8' }}
-          />
-        </View>
+        {canSwitchAssembly ? (
+          <View className="premium-card px-4 py-3 mb-3 z-30">
+            <Text className="text-slate-500 text-xs font-bold mb-1">CONTEXT</Text>
+            <AppDropdown
+              value={assemblyCode}
+              items={assemblyItems}
+              onChange={setAssemblyCode}
+            />
+          </View>
+        ) : null}
 
-        <View className="bg-white rounded-2xl border border-[#d9e2f0] p-4">
+        <View className="premium-card p-4">
           <View className="bg-[#eaf0ff] border border-[#d2dcf3] p-1 rounded-full flex-row mb-4">
             <TouchableOpacity className={`flex-1 py-2 rounded-full ${activeMeetingTab === 'list' ? 'bg-blue-600' : 'bg-transparent'}`} onPress={() => setActiveMeetingTab('list')}>
               <Text className={`text-center font-bold text-[12px] ${activeMeetingTab === 'list' ? 'text-white' : 'text-slate-600'}`}>Meetings</Text>

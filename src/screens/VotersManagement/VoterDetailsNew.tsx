@@ -22,27 +22,158 @@ import { addLog, updateLogStatus } from "../../components/LogsHelpers";
 import { AuthContext } from "../../context/AuthContext";
 import { bgColors } from "../../constants/colors";
 import { ACCURATE_GPS_OPTIONS, GetCurrentLocation } from "../../components/GetCurrentLocation";
-import DropDownPicker from "react-native-dropdown-picker";
 import { PrinterHelper } from "../../components/PrinterHelper";
+import { AppDropdown, AppMultiDropdown } from "../../components/AppDropdown";
+import { androidDropdownScrollLock, premiumStyles } from "../../constants/premiumStyles";
+import { premium } from "../../constants/premiumTheme";
+import { buildSMSMessage, buildWhatsAppMessage } from "../../helpers/voterMessageTemplates";
+import {
+    buildVoterUpdateRequest,
+    formStateFromVoter,
+} from "../../helpers/voterUpdatePayload";
+
+const normalizeMobileValue = (value) => String(value || "").replace(/\D/g, "").slice(0, 10);
+
+const maskTrailingValue = (value) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    if (raw.length <= 4) return raw;
+    return `${"*".repeat(raw.length - 4)}${raw.slice(-4)}`;
+};
+
+const VISITED_VOTER_STORAGE_PREFIX = "voterVisited:";
+
+const getVoterEpicKey = (voter) =>
+    String(voter?.epicNo || voter?.epic || voter?.voterId || "").trim();
+
+const isVoterMarkedVisitedLocally = async (epic) => {
+    if (!epic) return false;
+    try {
+        return await AsyncStorage.getItem(`${VISITED_VOTER_STORAGE_PREFIX}${epic}`) === "1";
+    } catch {
+        return false;
+    }
+};
+
+const markVoterVisitedLocally = async (epic) => {
+    if (!epic) return;
+    try {
+        await AsyncStorage.setItem(`${VISITED_VOTER_STORAGE_PREFIX}${epic}`, "1");
+    } catch {
+        // Ignore storage errors; server flags still protect future loads.
+    }
+};
+
+const PRIVACY_FIELD_KEYS = [
+    "dob",
+    "caste",
+    "community",
+    "civicIssue",
+    "natureOfVoter",
+    "motherTongue",
+    "education",
+    "residenceType",
+    "ownership",
+    "voterPoints",
+    "govtSchemeTracking",
+    "engagementPotential",
+    "ifShifted",
+    "status",
+    "notes",
+];
+
+const hasSavedPrivateSurveyData = (voter) =>
+    PRIVACY_FIELD_KEYS.some((key) => {
+        const value = voter?.[key];
+        if (Array.isArray(value)) return value.length > 0;
+        return String(value ?? "").trim().length > 0;
+    });
+
+const voterWasMetByVolunteer = (voter) => {
+    if (!voter) return false;
+    if (voter.volunteerMet) return true;
+    const fields = voter.updatedFields;
+    if (Array.isArray(fields) && fields.length > 0) return true;
+    if (typeof fields === "string" && fields.trim()) {
+        try {
+            const parsed = JSON.parse(fields);
+            if (Array.isArray(parsed)) return parsed.length > 0;
+        } catch {
+            return true;
+        }
+        return true;
+    }
+    return Boolean(voter.updatedByName || voter.updatedByPhone || hasSavedPrivateSurveyData(voter));
+};
+
+const emptyVoterForm = () => formStateFromVoter({});
+
+const unwrapMessageTemplate = (response) =>
+    response?.data?.data?.result ||
+    response?.data?.result ||
+    response?.result ||
+    response?.data ||
+    null;
+
+const formatBoothTitle = (no, label) => {
+    const sNo = String(no || "").trim();
+    const sLabel = String(label || "").trim();
+    if (!sNo) return sLabel || "-";
+    if (!sLabel || sLabel === "-") return sNo;
+    const prefixPatterns = [`${sNo} -`, `${sNo}-`, `${sNo} `];
+    if (prefixPatterns.some((p) => sLabel.startsWith(p))) return sLabel;
+    return `${sNo} - ${sLabel}`;
+};
 
 export default function VoterInfo({ navigation, route }) {
     const { voter, booth } = route.params;
     const { setBanner } = useContext(AuthContext);
 
-    const [activeTab, setActiveTab] = useState("PRIMARY");
     const [location, setLocation] = useState(
         voter?.latitude && voter?.longitude ? { latitude: voter.latitude, longitude: voter.longitude } : null
     );
     const [selectedVoter, setSelectedVoter] = useState(voter || {});
     const [customValues, setCustomValues] = useState({});
     const [language, setLanguage] = useState("en");
-    const [openDropdown, setOpenDropdown] = useState(null);
-    const [govtSchemeItems, setGovtSchemeItems] = useState<Array<{ label: string, value: string }>>([]);
+    const [dropdownFocused, setDropdownFocused] = useState(false);
     const [pollDayEnabled, setPollDayEnabled] = useState(false);
     const [printTemplate, setPrintTemplate] = useState(null);
+    const [whatsAppTemplate, setWhatsAppTemplate] = useState(null);
+    const [smsTemplate, setSmsTemplate] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [activeTab, setActiveTab] = useState("PRIMARY");
+    const [mobileFocused, setMobileFocused] = useState(false);
+    const [formDirty, setFormDirty] = useState(false);
+    const [visitDisplayMode, setVisitDisplayMode] = useState(() => voterWasMetByVolunteer(voter));
 
     const presentAddressRef = useRef<TextInput>(null);
+
+    const boothNumber = booth?.boothNo || voter?.boothNo || booth?.boothId || voter?.boothId || voter?.boothNo || "";
+    const boothLabel =
+        booth?.boothNameEn ||
+        booth?.boothLabel ||
+        voter?.boothLabel ||
+        voter?.boothNameEn ||
+        voter?.pollingStationAdrEn ||
+        voter?.pollingStationNameEn ||
+        voter?.boothName ||
+        voter?.boothInfo?.boothNameEn ||
+        "";
+    const boothTitle = formatBoothTitle(boothNumber, boothLabel);
+    const boothAddress =
+        booth?.address ||
+        booth?.boothNameEn ||
+        voter?.pollingStationAdrEn ||
+        voter?.pollingStationAdrLocal ||
+        (language === "en" ? booth?.boothNameEn : booth?.boothNameLocal) ||
+        "";
+    const wardLabel =
+        booth?.wardNameEn ||
+        voter?.wardNameEn ||
+        voter?.wardLabel ||
+        (voter.wardCode || booth?.wardId || voter?.wardId
+            ? `${voter.wardCode || booth?.wardId || voter?.wardId}`
+            : "-");
 
     const mapHtml = useMemo(() => {
         const lat = Number(location?.latitude || voter?.latitude || 12.9716);
@@ -50,29 +181,12 @@ export default function VoterInfo({ navigation, route }) {
         return buildOsmWebViewHtml(lat, lng, { zoom: 15 });
     }, [location?.latitude, location?.longitude, voter?.latitude, voter?.longitude]);
 
-    const [form, setForm] = useState({
-        mobile: voter?.mobile || "",
-        dob: voter?.dob || "",
-        community: voter?.community || "",
-        caste: voter?.caste || "",
-        motherTongue: voter?.motherTongue || "",
-        education: voter?.education || "",
-        residenceType: voter?.residenceType || "",
-        ownership: voter?.ownership || "",
-        voterPoints: voter?.voterPoints || "",
-        govtSchemeTracking: Array.isArray(voter?.govtSchemeTracking) ? voter.govtSchemeTracking : (voter?.govtSchemeTracking ? [voter.govtSchemeTracking] : []),
-        engagementPotential: voter?.engagementPotential || "",
-        ifShifted: voter?.ifShifted || "",
-        status: voter?.status || "",
-        civicIssue: voter?.civicIssue || "",
-        natureOfVoter: voter?.natureOfVoter || "",
-        notes: voter?.notes || "",
-        presentAddress: voter?.presentAddress || "",
-        newWard: voter?.newWard || "",
-        newBoothNo: voter?.newBoothNo || "",
-        newSerialNo: voter?.newSerialNo || "",
-        notAvailableReason: voter?.notAvailableReason || "",
-    });
+    const [baselineForm, setBaselineForm] = useState(() =>
+        voterWasMetByVolunteer(voter) ? emptyVoterForm() : formStateFromVoter(voter)
+    );
+    const [form, setForm] = useState(() =>
+        voterWasMetByVolunteer(voter) ? emptyVoterForm() : formStateFromVoter(voter)
+    );
 
     const fieldLabels = {
         mobile: "Mobile Number (10 Digits)",
@@ -95,7 +209,6 @@ export default function VoterInfo({ navigation, route }) {
 
     const primaryKeys = ["mobile", "dob", "caste", "community", "civicIssue", "natureOfVoter"];
     const additionalKeys = ["education", "motherTongue", "residenceType", "ownership", "voterPoints", "govtSchemeTracking", "engagementPotential", "ifShifted"];
-
     const dropdownOptions = {
         community: ["Hindu", "Muslim", "Christian", "Sikh", "Jain", "Others"],
         caste: ["Lingayat", "Vokkaliga", "Brahmin", "Yadava / Golla", "Kuruba", "Idiga / Billava", "Vishwakarma", "Devanga", "Nayaka / Naik", "Kumbara", "Madivala / Dhobi", "Uppara", "Besta", "Bhovi", "Holeya", "Madiga", "Adi Karnataka", "Lambani / Banjara", "Soliga", "Jenukuruba", "Kadu Kuruba", "Iruliga", "Muslim", "Christian", "Jain", "Bunt", "Kodava", "Maratha", "Mogaveera", "Tuluva", "Others"],
@@ -112,13 +225,17 @@ export default function VoterInfo({ navigation, route }) {
     };
 
     const handleChange = (key, value) => {
-        setForm(prev => ({ ...prev, [key]: value }));
+        const nextValue = key === "mobile" ? normalizeMobileValue(value) : value;
+        setForm(prev => ({ ...prev, [key]: nextValue }));
+        setFormDirty(true);
         if (key === "status" && (value === "Shifted outside the ward" || value === "Shifted in the ward")) {
             setTimeout(() => presentAddressRef.current?.focus(), 100);
         }
     };
 
-    const closeDropdown = () => setOpenDropdown(null);
+    const handleTabChange = (tab) => {
+        setActiveTab(tab);
+    };
 
     const parseDobParts = (value) => {
         const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -155,19 +272,7 @@ export default function VoterInfo({ navigation, route }) {
             setDay(Math.min(next.day, new Date(next.year, next.month, 0).getDate()));
         }, [value]);
 
-        const fieldStyle = {
-            borderWidth: 1,
-            borderColor: "#F3F4F6",
-            borderRadius: 12,
-            paddingHorizontal: 16,
-            paddingVertical: 14,
-            backgroundColor: "white",
-            color: "#1F2937",
-            minHeight: 52,
-        };
-
         const openPicker = () => {
-            closeDropdown();
             const parts = parseDobParts(value);
             setYear(parts.year);
             setMonth(parts.month);
@@ -176,33 +281,21 @@ export default function VoterInfo({ navigation, route }) {
         };
 
         return (
-            <View style={{ marginBottom: 16, width: "100%" }}>
-                <Text style={{ fontSize: 14, fontWeight: "500", color: "#6B7280", marginBottom: 6 }}>{label}</Text>
-                <View style={{ flexDirection: "row", alignItems: "stretch", width: "100%" }}>
+            <View style={premiumStyles.fieldWrap}>
+                <Text style={premiumStyles.label}>{label}</Text>
+                <View style={premiumStyles.dobRow}>
                     <TouchableOpacity activeOpacity={0.85} onPress={openPicker} style={{ flex: 1, marginRight: 8 }}>
                         <TextInput
-                            style={[fieldStyle, { marginRight: 0 }]}
+                            style={premiumStyles.input}
                             value={value || ""}
                             placeholder="YYYY-MM-DD"
-                            placeholderTextColor="#94A3B8"
+                            placeholderTextColor={premium.textLight}
                             editable={false}
                             pointerEvents="none"
                         />
                     </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={openPicker}
-                        style={{
-                            width: 52,
-                            minHeight: 52,
-                            borderWidth: 1,
-                            borderColor: "#F3F4F6",
-                            borderRadius: 12,
-                            alignItems: "center",
-                            justifyContent: "center",
-                            backgroundColor: "white",
-                        }}
-                    >
-                        <Ionicons name="calendar-outline" size={22} color="#2563EB" />
+                    <TouchableOpacity onPress={openPicker} style={premiumStyles.dobCalendarBtn}>
+                        <Ionicons name="calendar-outline" size={22} color={premium.primary} />
                     </TouchableOpacity>
                 </View>
                 <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
@@ -251,6 +344,7 @@ export default function VoterInfo({ navigation, route }) {
             const lang = await AsyncStorage.getItem("app_language") || "en";
             setLanguage(lang);
 
+            let mergedVoter = voter || {};
             const json = await AsyncStorage.getItem("assemblyData");
             if (json) {
                 try {
@@ -261,36 +355,63 @@ export default function VoterInfo({ navigation, route }) {
                         ?.find((v) => v.voterId === voter.voterId);
 
                     if (updatedVoter) {
-                        setSelectedVoter(updatedVoter);
-                        const newForm = { ...form };
-                        Object.keys(form).forEach(key => {
-                            if (updatedVoter[key] !== undefined) {
-                                if (key === "govtSchemeTracking") {
-                                    newForm[key] = Array.isArray(updatedVoter[key]) ? updatedVoter[key] : [updatedVoter[key]];
-                                } else {
-                                    newForm[key] = updatedVoter[key];
-                                }
-                            }
-                        });
-                        setForm(newForm);
+                        mergedVoter = { ...voter, ...updatedVoter };
                     }
                 } catch (err) { console.error("Error parsing assembly data", err); }
             }
+            const epic = getVoterEpicKey(mergedVoter);
+            const visited = voterWasMetByVolunteer(mergedVoter) || await isVoterMarkedVisitedLocally(epic);
+            const nextForm = visited ? emptyVoterForm() : formStateFromVoter(mergedVoter);
+            setSelectedVoter(mergedVoter);
+            setBaselineForm(nextForm);
+            setForm(nextForm);
+            setVisitDisplayMode(visited);
+            setCustomValues({});
+            setMobileFocused(false);
+            setFormDirty(false);
 
             const code = await getAssemblyCode().catch(() => voter.assemblyCode || '000000000151');
             CRUDAPI.fetchPollDayConfig(code).then(config => setPollDayEnabled(config?.enabled || false)).catch(() => {});
-            CRUDAPI.fetchMessageTemplate(voter.wardCode || booth?.wardId, 'PRINT').then(res => setPrintTemplate(res?.data?.result || res?.result || res || {})).catch(() => {});
+
+            const wardId =
+                voter.wardCode ||
+                booth?.wardCode ||
+                booth?.wardId ||
+                voter?.wardId ||
+                voter?.ward_id ||
+                voter?.wardNo ||
+                "";
+            const voterEpic = voter.epicNo || voter.epic || voter.voterId;
+            const fetchChannel = async (channel) => {
+                try {
+                    const wardRes = await CRUDAPI.fetchMessageTemplate(wardId || null, channel, voterEpic);
+                    const wardTpl = unwrapMessageTemplate(wardRes);
+                    if (wardTpl) return wardTpl;
+                    const globalRes = await CRUDAPI.fetchMessageTemplate(null, channel);
+                    return unwrapMessageTemplate(globalRes);
+                } catch {
+                    return null;
+                }
+            };
+            Promise.all([
+                fetchChannel('WHATSAPP'),
+                fetchChannel('SMS'),
+                fetchChannel('PRINT'),
+            ]).then(([waTpl, smsTpl, prnTpl]) => {
+                setWhatsAppTemplate(waTpl || {});
+                setSmsTemplate(smsTpl || {});
+                setPrintTemplate(prnTpl || {});
+            }).catch(() => {});
         };
 
         initializeData();
-        setGovtSchemeItems(dropdownOptions.govtSchemeTracking.map(item => ({ label: item, value: item })));
     }, []);
 
     const fetchLocation = async () => {
-        closeDropdown();
         const loc = await GetCurrentLocation(ACCURATE_GPS_OPTIONS);
         if (loc) {
             setLocation(loc);
+            setFormDirty(true);
             setBanner({ type: "success", message: "Location captured successfully!" });
         } else {
             setBanner({ type: "error", message: "Unable to fetch location. Please check permissions." });
@@ -305,32 +426,19 @@ export default function VoterInfo({ navigation, route }) {
             newBoothNo: "", newSerialNo: "", notAvailableReason: "",
         });
         setCustomValues({});
+        setFormDirty(false);
     };
 
-    const buildWhatsAppMessage = () => {
-        const voterName = selectedVoter.firstMiddleNameEn || voter.firstMiddleNameEn || "-";
-        const epic = selectedVoter.epicNo || voter.epicNo || "-";
-        const boothNo = booth?.boothId || voter?.boothNo || "-";
-        const serial = selectedVoter.serialNo || voter.serialNo || "-";
-        const bName = booth?.boothNameEn || "-";
-        const bAddress = booth?.address || "";
-
-        return `\u270A *LOK SABHA ELECTION \u2013 2024*\n\n*Assembly:* 160 \u2013 Sarvagnanagara\n\n*Voter Name:* ${voterName}\n*EPIC ID:* ${epic}\n*Booth No:* ${boothNo}\n*Serial No:* ${serial}\n\n*Polling Booth:*\n${bName}\n${bAddress}\n\n\ud83d\udcc5 *Date:* 26-Apr-2024\n\u23f0 *Time:* 7:00 AM \u2013 6:00 PM\n\n\ud83d\ude4f Kindly cast your valuable vote.\n\n\u2014 Thank you`.trim();
-    };
-
-    const buildSMSMessage = () => {
-        const voterName = selectedVoter.firstMiddleNameEn || voter.firstMiddleNameEn || "-";
-        const epic = selectedVoter.epicNo || voter.epicNo || "-";
-        const boothNo = booth?.boothId || voter?.boothNo || "-";
-        const serial = selectedVoter.serialNo || voter.serialNo || "-";
-        const bName = booth?.boothNameEn || "-";
-        const bAddress = booth?.address || "";
-
-        return `LOK SABHA ELECTION - 2024\n\nAssembly: 160 - SARVAGNANAGARA\n\nVoter Name: ${voterName}\nEPIC ID: ${epic}\nBooth No: ${boothNo} | Serial No: ${serial}\n\nPolling Booth:\n${bName}\n${bAddress}\n\nDate: 26-APR-2024\nTime: 7:00 AM - 6:00 PM\n\nKindly cast your valuable vote.\n\nThank you`.trim();
-    };
+    const getMessageVoterPayload = () => ({
+        ...voter,
+        ...selectedVoter,
+        ...form,
+        relationLabel: voter?.relationType || voter?.relationLabel || "Father",
+        relationName: voter?.relationFirstMiddleNameEn || voter?.relationName || voter?.fatherName || "",
+        boothLabel: boothLabel || boothTitle,
+    });
 
     const openAction = (type) => {
-        closeDropdown();
         const phone = form.mobile || voter.mobile;
         if (!phone || phone.length !== 10) {
             Alert.alert("Error", "Valid 10-digit mobile number required");
@@ -340,32 +448,60 @@ export default function VoterInfo({ navigation, route }) {
         if (type === 'call') {
             Linking.openURL(`tel:${phone}`).catch(() => Alert.alert("Error", "Unable to open dialer"));
         } else if (type === 'sms') {
-            const msg = buildSMSMessage();
+            const msg = buildSMSMessage(getMessageVoterPayload(), booth, smsTemplate);
             const url = Platform.OS === "ios" ? `sms:${phone}&body=${encodeURIComponent(msg)}` : `sms:${phone}?body=${encodeURIComponent(msg)}`;
             Linking.openURL(url).catch(() => Alert.alert("Error", "SMS not supported"));
         } else if (type === 'whatsapp') {
-            const msg = buildWhatsAppMessage();
+            const msg = buildWhatsAppMessage(getMessageVoterPayload(), booth, whatsAppTemplate);
             const url = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
             Linking.openURL(url).catch(() => Alert.alert("Error", "WhatsApp not installed"));
         }
     };
 
     const handleUpdate = async () => {
-        if (!location?.latitude || !location?.longitude) {
+        setSaving(true);
+        let updateLocation = location;
+        if (!updateLocation?.latitude || !updateLocation?.longitude) {
+            try {
+                updateLocation = await GetCurrentLocation(ACCURATE_GPS_OPTIONS);
+                if (updateLocation) setLocation(updateLocation);
+            } catch (error: any) {
+                setBanner({ type: "error", message: error?.message || "Unable to capture location for update." });
+                setSaving(false);
+                return;
+            }
+        }
+        if (!updateLocation?.latitude || !updateLocation?.longitude) {
             setBanner({ type: "error", message: "Location is required to update voter info." });
+            setSaving(false);
             return;
         }
 
-        setSaving(true);
-        const finalData = { ...form };
-        // Handle "Others" logic
-        Object.keys(customValues).forEach(key => {
+        const updateRequest = buildVoterUpdateRequest(form, customValues, baselineForm);
+        updateRequest.latitude = updateLocation.latitude;
+        updateRequest.longitude = updateLocation.longitude;
+
+        const enrichmentKeys = Object.keys(updateRequest).filter((k) => k !== 'latitude' && k !== 'longitude');
+        if (!enrichmentKeys.length && !formDirty) {
+            setBanner({ type: "error", message: "No changes to save." });
+            setSaving(false);
+            return;
+        }
+
+        const savedForm = { ...form };
+        Object.keys(customValues).forEach((key) => {
             if (form[key] === "Others" && customValues[key]) {
-                finalData[key] = customValues[key];
+                savedForm[key] = customValues[key];
             }
         });
 
-        const logId = await addLog(`Updated voter #${voter.epicNo}`, voter, booth, "pending", location);
+        const logId = await addLog(
+            `Updated voter #${voter.epicNo}`,
+            { ...voter, ...savedForm, ...updateRequest },
+            booth,
+            "pending",
+            updateLocation,
+        );
 
         try {
             const assemblyData = await AsyncStorage.getItem('assemblyData');
@@ -373,25 +509,48 @@ export default function VoterInfo({ navigation, route }) {
                 const parsed = JSON.parse(assemblyData);
                 parsed.assembly.wards = parsed.assembly.wards.map(w => ({
                     ...w, booths: w.booths.map(b => ({
-                        ...b, voters: b.voters.map(v => v.voterId === voter.voterId ? { ...v, ...finalData, latitude: location.latitude, longitude: location.longitude } : v)
+                        ...b, voters: b.voters.map(v => v.voterId === voter.voterId ? { ...v, ...savedForm, ...updateRequest, latitude: updateLocation.latitude, longitude: updateLocation.longitude } : v)
                     }))
                 }));
                 await AsyncStorage.setItem('assemblyData', JSON.stringify(parsed));
-                setSelectedVoter(prev => ({ ...prev, ...finalData }));
+                setSelectedVoter(prev => ({ ...prev, ...savedForm, ...updateRequest }));
             }
 
             const res = await CRUDAPI.updateVoter(voter.epicNo, {
-                updateLocationLat: location.latitude,
-                updateLocationLng: location.longitude,
-                updateRequest: { ...finalData, latitude: location.latitude, longitude: location.longitude }
+                updateLocationLat: updateLocation.latitude,
+                updateLocationLng: updateLocation.longitude,
+                updateRequest,
             }, { boothNo: voter?.boothNo, wardCode: voter?.wardCode || booth?.wardId });
 
             if (res.success) {
                 await updateLogStatus(logId, "server");
                 setBanner({ type: "success", message: "Voter Info updated successfully!" });
+                await markVoterVisitedLocally(getVoterEpicKey(voter));
+                const savedVoter = {
+                    ...selectedVoter,
+                    ...savedForm,
+                    ...updateRequest,
+                    volunteerMet: true,
+                    updatedFields: enrichmentKeys,
+                    latitude: updateLocation.latitude,
+                    longitude: updateLocation.longitude,
+                };
+                setSelectedVoter(savedVoter);
+                const privateForm = emptyVoterForm();
+                setBaselineForm(privateForm);
+                setForm(privateForm);
+                setCustomValues({});
+                setMobileFocused(false);
+                setVisitDisplayMode(true);
+                setFormDirty(false);
             }
-        } catch (error) {
-            setBanner({ type: "error", message: "Saved locally, sync pending." });
+        } catch (error: any) {
+            const apiMsg =
+                error?.message
+                || error?.response?.data?.message
+                || error?.response?.data?.detail
+                || (typeof error?.data?.error === 'string' ? error.data.error : null);
+            setBanner({ type: "error", message: apiMsg || "Saved locally, sync pending." });
         } finally {
             setSaving(false);
         }
@@ -408,20 +567,46 @@ export default function VoterInfo({ navigation, route }) {
                 />
             );
         }
-        if (key === "mobile" || key === "ifShifted" || key === "presentAddress" || key === "newWard" || key === "newBoothNo" || key === "newSerialNo" || key === "notAvailableReason") {
+        if (key === "mobile") {
+            const storedMobile = form.mobile || voter?.mobile || "";
+            const displayValue = mobileFocused ? storedMobile : maskTrailingValue(storedMobile);
             return (
-                <View key={key} style={{ marginBottom: 16 }}>
-                    <Text style={{ fontSize: 14, fontWeight: "500", color: "#6B7280", marginBottom: 6 }}>{label}</Text>
+                <View key={key} style={premiumStyles.fieldWrap}>
+                    <Text style={premiumStyles.label}>{label}</Text>
                     <TextInput
-                        value={form[key]}
-                        keyboardType={key === "mobile" ? "number-pad" : "default"}
+                        value={displayValue}
+                        keyboardType="number-pad"
+                        maxLength={10}
                         placeholder={label}
-                        placeholderTextColor="#94A3B8"
-                        style={{ borderWidth: 1, borderColor: "#F3F4F6", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, backgroundColor: "white", color: "#1F2937", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }}
+                        placeholderTextColor={premium.textLight}
+                        style={premiumStyles.input}
+                        onFocus={() => {
+                            if (!form.mobile && voter?.mobile) {
+                                handleChange("mobile", normalizeMobileValue(voter.mobile));
+                            }
+                            setMobileFocused(true);
+                        }}
+                        onBlur={() => setMobileFocused(false)}
+                        onChangeText={(text) => handleChange("mobile", text)}
+                    />
+                </View>
+            );
+        }
+        if (key === "ifShifted" || key === "presentAddress" || key === "newWard" || key === "newBoothNo" || key === "newSerialNo" || key === "notAvailableReason") {
+            const isMultiline = key === "presentAddress";
+            return (
+                <View key={key} style={premiumStyles.fieldWrap}>
+                    <Text style={premiumStyles.label}>{label}</Text>
+                    <TextInput
+                        ref={key === "presentAddress" ? presentAddressRef : undefined}
+                        value={form[key]}
+                        keyboardType="default"
+                        placeholder={label}
+                        placeholderTextColor={premium.textLight}
+                        style={isMultiline ? premiumStyles.inputMultiline : premiumStyles.input}
                         onChangeText={(text) => handleChange(key, text)}
-                        onFocus={closeDropdown}
-                        multiline={key === "presentAddress" || key === "notes"}
-                        numberOfLines={key === "presentAddress" ? 3 : 1}
+                        multiline={isMultiline}
+                        numberOfLines={isMultiline ? 3 : 1}
                     />
                 </View>
             );
@@ -429,42 +614,37 @@ export default function VoterInfo({ navigation, route }) {
 
         const isMulti = key === "govtSchemeTracking";
         const items = dropdownOptions[key]?.map(opt => ({ label: opt, value: opt })) || [];
+        const dropdownHandlers = {
+            onFocus: () => setDropdownFocused(true),
+            onBlur: () => setDropdownFocused(false),
+        };
 
         return (
-            <View key={key} style={{ marginBottom: 16, zIndex: openDropdown === key ? 1000 : 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: "500", color: "#6B7280", marginBottom: 6 }}>{label}</Text>
-                <DropDownPicker
-                    open={openDropdown === key}
-                    value={form[key]}
-                    items={isMulti ? govtSchemeItems : items}
-                    setOpen={(isOpen) => setOpenDropdown(isOpen ? key : null)}
-                    onClose={closeDropdown}
-                    closeAfterSelecting={!isMulti}
-                    setValue={(callback) => {
-                        const val = callback(form[key]);
-                        handleChange(key, val);
-                        if (!isMulti) setOpenDropdown(null);
-                    }}
-                    onSelectItem={() => {
-                        if (!isMulti) setOpenDropdown(null);
-                    }}
-                    multiple={isMulti}
-                    mode="BADGE"
-                    placeholder={`Select ${label}`}
-                    listMode="SCROLLVIEW"
-                    style={{ backgroundColor: "#ffffff", borderColor: "#F3F4F6", borderRadius: 12, minHeight: 52 }}
-                    dropDownContainerStyle={{ backgroundColor: "#ffffff", borderColor: "#F3F4F6", elevation: 5, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10 }}
-                    textStyle={{ color: "#1F2937", fontSize: 14, fontWeight: "600" }}
-                    placeholderStyle={{ color: "#94A3B8" }}
-                    badgeColors={["#3B82F6"]}
-                    badgeTextStyle={{ color: "#fff" }}
-                />
+            <View key={key} style={premiumStyles.fieldWrapDropdown}>
+                <Text style={premiumStyles.label}>{label}</Text>
+                {isMulti ? (
+                    <AppMultiDropdown
+                        value={form[key] || []}
+                        items={items}
+                        onChange={(vals) => handleChange(key, vals)}
+                        placeholder={`Select ${label}`}
+                        {...dropdownHandlers}
+                    />
+                ) : (
+                    <AppDropdown
+                        value={form[key]}
+                        items={items}
+                        onChange={(val) => handleChange(key, val)}
+                        placeholder={`Select ${label}`}
+                        {...dropdownHandlers}
+                    />
+                )}
                 {form[key] === "Others" && (
                     <TextInput
                         placeholder={`Enter ${label.toLowerCase()}`}
                         value={customValues[key]}
                         onChangeText={t => setCustomValues(prev => ({ ...prev, [key]: t }))}
-                        style={{ marginTop: 8, borderStyle: "dashed", borderWidth: 1, borderColor: "#BFDBFE", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: "#EFF6FF", color: "#1F2937" }}
+                        style={premiumStyles.othersInput}
                     />
                 )}
             </View>
@@ -472,58 +652,55 @@ export default function VoterInfo({ navigation, route }) {
     };
 
     return (
-        <View style={{ flex: 1, backgroundColor: "white" }}>
-            {/* Header */}
+        <View style={premiumStyles.screen}>
             <ScrollView
-                style={{ flex: 1, paddingHorizontal: 20, marginTop: 10 }}
+                style={{ flex: 1 }}
+                contentContainerStyle={premiumStyles.scrollContent}
                 showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                onScrollBeginDrag={closeDropdown}
+                keyboardShouldPersistTaps="always"
+                nestedScrollEnabled
+                scrollEnabled={androidDropdownScrollLock(dropdownFocused)}
             >
-                {/* Voter Details Card */}
-                <View style={{ backgroundColor: "#F9FAFB", borderRadius: 24, padding: 24, marginBottom: 24, borderWidth: 1, borderColor: "#F3F4F6" }}>
-                    <View style={{ gap: 16 }}>
-                        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                            <Text style={{ fontSize: 14, fontWeight: "bold", color: "#111827", width: 112 }}>Name</Text>
-                            <Text style={{ fontSize: 14, color: "#374151", flex: 1 }}>{language === 'en' ? (voter.firstMiddleNameEn || "-").toUpperCase() : voter.firstMiddleNameLocal}</Text>
+                <View style={premiumStyles.card}>
+                    {visitDisplayMode ? (
+                        <View style={premiumStyles.visitedPrivacyBanner}>
+                            <View style={premiumStyles.visitedPrivacyIcon}>
+                                <Ionicons name="checkmark" size={24} color="#FFFFFF" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={premiumStyles.visitedPrivacyTitle}>VISITED</Text>
+                                <Text style={premiumStyles.visitedPrivacySubtitle}>Survey saved · details hidden for privacy</Text>
+                            </View>
                         </View>
-                        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                            <Text style={{ fontSize: 14, fontWeight: "bold", color: "#111827", width: 112 }}>EPIC / Voter ID</Text>
-                            <Text style={{ fontSize: 14, color: "#374151", flex: 1 }}>{voter.epicNo || "-"}</Text>
-                        </View>
-                        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                            <Text style={{ fontSize: 14, fontWeight: "bold", color: "#111827", width: 112 }}>Polling Booth</Text>
-                            <Text style={{ fontSize: 14, color: "#374151", flex: 1 }}>
-                                {booth?.boothId || voter?.boothId || voter?.boothNo || "-"} - {
-                                    language === 'en' 
-                                    ? (booth?.boothNameEn || voter?.boothNameEn || voter?.boothLabel || voter?.pollingStationAdrEn || voter?.pollingStationNameEn || voter?.boothName || "-") 
-                                    : (booth?.boothNameLocal || voter?.boothNameLocal || voter?.pollingStationAdrLocal || "-")
-                                }
-                            </Text>
-                        </View>
-                        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                            <Text style={{ fontSize: 14, fontWeight: "bold", color: "#111827", width: 112 }}>Ward</Text>
-                            <Text style={{ fontSize: 14, color: "#374151", flex: 1 }}>
-                                {voter.wardCode || booth?.wardId || voter?.wardId || "-"} - {
-                                    booth?.wardNameEn || voter?.wardNameEn || (language === 'en' ? "Vibhootipura" : "ವಿಭೂತಿಪುರ")
-                                }
-                            </Text>
-                        </View>
+                    ) : null}
+                    <View style={premiumStyles.detailRow}>
+                        <Text style={premiumStyles.detailLabel}>Name</Text>
+                        <Text style={premiumStyles.detailValue}>
+                            {language === 'en'
+                                ? (voter.firstMiddleNameEn || voter.voterName || voter.name || "-").toUpperCase()
+                                : (voter.firstMiddleNameLocal || voter.firstMiddleNameEn || voter.voterName || "-")}
+                        </Text>
+                    </View>
+                    <View style={premiumStyles.detailRow}>
+                        <Text style={premiumStyles.detailLabel}>EPIC / Voter ID</Text>
+                        <Text style={premiumStyles.detailValue}>{voter.epicNo || "-"}</Text>
+                    </View>
+                    <View style={[premiumStyles.detailRow, { marginBottom: 0 }]}>
+                        <Text style={premiumStyles.detailLabel}>Ward</Text>
+                        <Text style={premiumStyles.detailValue}>{wardLabel}</Text>
                     </View>
                 </View>
 
-                {/* Map Section */}
+                <View style={premiumStyles.boothAboveMapCard}>
+                    <Text style={premiumStyles.boothAboveMapTitle}>Polling Booth</Text>
+                    <Text style={premiumStyles.boothAboveMapValue}>{boothTitle}</Text>
+                    {boothAddress && boothAddress !== boothTitle ? (
+                        <Text style={premiumStyles.boothAboveMapAddress}>{boothAddress}</Text>
+                    ) : null}
+                </View>
+
                 <View style={{ marginBottom: 24 }}>
-                    <View
-                        style={{
-                            height: 200,
-                            borderRadius: 24,
-                            overflow: "hidden",
-                            borderWidth: 1,
-                            borderColor: "#E2E8F0",
-                            backgroundColor: "#EFF6FF",
-                        }}
-                    >
+                    <View style={premiumStyles.mapFrame}>
                         <WebView
                             originWhitelist={["*"]}
                             source={{ html: mapHtml }}
@@ -544,96 +721,105 @@ export default function VoterInfo({ navigation, route }) {
                             }}
                             style={{ marginTop: 10, alignSelf: "flex-end" }}
                         >
-                            <Text style={{ fontSize: 12, color: "#2563EB", fontWeight: "700" }}>
+                            <Text style={{ fontSize: 12, color: premium.primary, fontWeight: "700" }}>
                                 Open in Maps
                             </Text>
                         </TouchableOpacity>
                     ) : null}
-                    <TouchableOpacity
-                        onPress={fetchLocation}
-                        style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#2563EB", paddingVertical: 16, borderRadius: 16, marginTop: 16, shadowColor: "#3B82F6", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4 }}
-                    >
+                    <TouchableOpacity onPress={fetchLocation} style={premiumStyles.locationBtn}>
                         <Ionicons name="location" size={20} color="white" />
-                        <Text style={{ color: "white", fontSize: 16, fontWeight: "bold", marginLeft: 8 }}>Location Captured</Text>
+                        <Text style={premiumStyles.locationBtnText}>Location Captured</Text>
                     </TouchableOpacity>
                 </View>
 
-                {/* Quick Actions */}
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 32, gap: 12 }}>
-                    <TouchableOpacity onPress={() => { closeDropdown(); openAction('sms'); }} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
-                        <Ionicons name="chatbubble-outline" size={22} color="#4B5563" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { closeDropdown(); openAction('whatsapp'); }} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
-                        <Ionicons name="logo-whatsapp" size={22} color="#22C55E" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { closeDropdown(); openAction('call'); }} style={{ flex: 1, height: 56, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, alignItems: "center", justifyContent: "center" }}>
-                        <Ionicons name="call-outline" size={22} color="#3B82F6" />
-                    </TouchableOpacity>
-                </View>
-
-                {/* Tabs */}
-                <View style={{ flexDirection: 'row', backgroundColor: '#F9FAFB', borderRadius: 16, padding: 6, marginBottom: 32 }}>
-                    {["PRIMARY", "ADDITIONAL", "NOTES"].map(tab => (
-                        <TouchableOpacity
-                            key={tab}
-                            onPress={() => {
-                                closeDropdown();
-                                setActiveTab(tab);
-                            }}
-                            style={{
-                                flex: 1,
-                                paddingVertical: 12,
-                                borderRadius: 12,
-                                backgroundColor: activeTab === tab ? "#2563EB" : "transparent"
-                            }}
-                        >
-                            <Text style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 12, color: activeTab === tab ? "white" : "#6B7280" }}>{tab}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-
-                {/* Form Sections */}
-                <View style={{ marginBottom: 40 }}>
-                    {activeTab === "PRIMARY" && primaryKeys.map(k => renderField(k, fieldLabels[k]))}
-                    {activeTab === "ADDITIONAL" && additionalKeys.map(k => renderField(k, fieldLabels[k]))}
-                    {activeTab === "NOTES" && (
-                        <>
-                            {renderField("status", "Available")}
-                            {(form.status && form.status.includes("Shifted")) && renderField("presentAddress", "Enter present address")}
-                            {form.status === "Recommend shift to the new ward" && (
-                                <View style={{ gap: 16 }}>
-                                    {renderField("newWard", "Ward")}
-                                    {renderField("newBoothNo", "Booth No")}
-                                    {renderField("newSerialNo", "Serial No")}
-                                </View>
-                            )}
-                            {form.status === "Not available" && renderField("notAvailableReason", "Enter the reason")}
-                            <View style={{ marginBottom: 16 }}>
-                                <Text style={{ fontSize: 14, fontWeight: "500", color: "#6B7280", marginBottom: 6 }}>ENTER NOTES</Text>
-                                <TextInput
-                                    multiline
-                                    numberOfLines={5}
-                                    value={form.notes}
-                                    onChangeText={t => handleChange("notes", t)}
-                                    placeholder="Enter notes"
-                                    style={{ borderWidth: 1, borderColor: "#F3F4F6", borderRadius: 12, padding: 16, backgroundColor: "white", color: "#1F2937", height: 120, textAlignVertical: "top" }}
-                                />
-                            </View>
-                        </>
-                    )}
-                </View>
-
-                {/* Footer Actions */}
-                <View style={{ flexDirection: "row", gap: 16, marginBottom: 16 }}>
-                    <TouchableOpacity onPress={handleReset} style={{ flex: 1, backgroundColor: "white", borderWidth: 1, borderColor: "#E5E7EB", paddingVertical: 16, borderRadius: 16 }}>
-                        <Text style={{ textAlign: "center", fontWeight: "bold", color: "#111827", fontSize: 16 }}>Reset</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        onPress={handleUpdate} 
-                        disabled={saving}
-                        style={{ flex: 1, backgroundColor: "#94A3B8", paddingVertical: 16, borderRadius: 16 }}
+                <View style={premiumStyles.actionRow}>
+                    <TouchableOpacity
+                        onPress={() => openAction('sms')}
+                        style={[premiumStyles.actionBtn, premiumStyles.actionSms]}
                     >
-                        {saving ? <ActivityIndicator color="white" /> : <Text style={{ textAlign: "center", fontWeight: "bold", color: "white", fontSize: 16 }}>Update</Text>}
+                        <Ionicons name="chatbubble" size={26} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => openAction('whatsapp')}
+                        style={[premiumStyles.actionBtn, premiumStyles.actionWhatsapp]}
+                    >
+                        <Ionicons name="logo-whatsapp" size={28} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => openAction('call')}
+                        style={[premiumStyles.actionBtn, premiumStyles.actionCall]}
+                    >
+                        <Ionicons name="call" size={26} color="#fff" />
+                    </TouchableOpacity>
+                </View>
+
+                <View style={premiumStyles.tabStrip}>
+                    {["PRIMARY", "ADDITIONAL", "NOTES"].map((tab) => {
+                        const isActive = activeTab === tab;
+                        return (
+                            <TouchableOpacity
+                                key={tab}
+                                activeOpacity={0.85}
+                                onPress={() => handleTabChange(tab)}
+                                style={[premiumStyles.tabBtn, isActive && premiumStyles.tabBtnActive]}
+                            >
+                                <Text style={[premiumStyles.tabBtnText, isActive && premiumStyles.tabBtnTextActive]}>
+                                    {tab}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+
+                {activeTab === "PRIMARY" && (
+                    <View style={premiumStyles.sectionCard}>
+                        {primaryKeys.map(k => renderField(k, fieldLabels[k]))}
+                    </View>
+                )}
+
+                {activeTab === "ADDITIONAL" && (
+                    <View style={premiumStyles.sectionCard}>
+                        {additionalKeys.map(k => renderField(k, fieldLabels[k]))}
+                    </View>
+                )}
+
+                {activeTab === "NOTES" && (
+                    <View style={premiumStyles.sectionCard}>
+                        {renderField("status", "Available")}
+                        {(form.status && form.status.includes("Shifted")) && renderField("presentAddress", "Enter present address")}
+                        {form.status === "Recommend shift to the new ward" && (
+                            <View>
+                                {renderField("newWard", "Ward")}
+                                {renderField("newBoothNo", "Booth No")}
+                                {renderField("newSerialNo", "Serial No")}
+                            </View>
+                        )}
+                        {form.status === "Not available" && renderField("notAvailableReason", "Enter the reason")}
+                        <View style={premiumStyles.fieldWrap}>
+                            <Text style={premiumStyles.label}>ENTER NOTES</Text>
+                            <TextInput
+                                multiline
+                                numberOfLines={5}
+                                value={form.notes}
+                                onChangeText={t => handleChange("notes", t)}
+                                placeholder="Enter notes"
+                                placeholderTextColor={premium.textLight}
+                                style={premiumStyles.inputMultiline}
+                            />
+                        </View>
+                    </View>
+                )}
+
+                <View style={premiumStyles.footerRow}>
+                    <TouchableOpacity onPress={handleReset} style={premiumStyles.secondaryBtn}>
+                        <Text style={premiumStyles.secondaryBtnText}>Reset</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={handleUpdate}
+                        disabled={saving || !formDirty}
+                        style={[premiumStyles.updateBtn, (saving || !formDirty) && premiumStyles.updateBtnDisabled]}
+                    >
+                        {saving ? <ActivityIndicator color="white" /> : <Text style={premiumStyles.updateBtnText}>Update</Text>}
                     </TouchableOpacity>
                 </View>
 
@@ -645,9 +831,9 @@ export default function VoterInfo({ navigation, route }) {
                         const success = await PrinterHelper.performPrint(printer, slip);
                         if (success) setBanner({ type: "success", message: "Print command sent!" });
                     }}
-                    style={{ backgroundColor: "#B0BAD2", paddingVertical: 20, borderRadius: 16, marginBottom: 48 }}
+                    style={premiumStyles.printBtn}
                 >
-                    <Text style={{ textAlign: "center", fontWeight: "bold", color: "white", fontSize: 16 }}>Voter Slip Print</Text>
+                    <Text style={premiumStyles.printBtnText}>Voter Slip Print</Text>
                 </TouchableOpacity>
             </ScrollView>
         </View>

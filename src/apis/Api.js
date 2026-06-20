@@ -32,6 +32,16 @@ export const getAssemblyCode = async () => {
     }
 };
 
+/** Persist the selected assembly context so every screen shares the same one. */
+export const persistAssemblyCode = async (code) => {
+    try {
+        const value = String(code || '').trim();
+        if (value) await AsyncStorage.setItem('assemblyCode', value);
+    } catch {
+        // best-effort
+    }
+};
+
 function userHasAssignmentScope(user = {}) {
     const role = String(user.role || '').replace('ROLE_', '').toUpperCase();
     if (['SUPER_ADMIN', 'ADMIN'].includes(role)) return true;
@@ -117,9 +127,18 @@ const PUBLIC_VOTER_UPDATE_FIELDS = new Set([
     'relationLastNameLocal', 'relationType', 'team',
 ]);
 
+const isNonemptyUpdateValue = (value) => {
+    if (value === null || value === undefined) return false;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'string') return value.trim() !== '';
+    return true;
+};
+
 const buildPublicVoterUpdatePayload = (jsonReq = {}, options = {}) => {
     const updateRequest = Object.entries(jsonReq?.updateRequest || {}).reduce((acc, [key, value]) => {
-        if (PUBLIC_VOTER_UPDATE_FIELDS.has(key)) acc[key] = value;
+        if (!PUBLIC_VOTER_UPDATE_FIELDS.has(key)) return acc;
+        if (!isNonemptyUpdateValue(value)) return acc;
+        acc[key] = value;
         return acc;
     }, {});
 
@@ -236,10 +255,34 @@ export const CRUDAPI = {
 
     updateUserProfile: async (jsonReq) => {
         try {
-            const response = await apiClient.put('/votebase/v1/api/user/profile', jsonReq);
+            const payload = {
+                firstName: jsonReq?.firstName,
+                phone: jsonReq?.phone,
+            };
+            if (jsonReq?.profilePicUrl) payload.profilePicUrl = jsonReq.profilePicUrl;
+            if (jsonReq?.tenantId != null) payload.tenantId = jsonReq.tenantId;
+            if (jsonReq?.role) payload.role = jsonReq.role;
+            const response = await apiClient.put('/votebase/v1/api/user/profile', payload);
             return response.data;
         } catch (error) {
-            console.log('Error while updating profile info:', error.response?.data || error.message)
+            console.log('Error while updating profile info:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    uploadUserProfilePic: async (formData) => {
+        try {
+            const token = await getApiToken();
+            const response = await apiClient.post('/votebase/v1/api/user/profile/upload', formData, {
+                headers: {
+                    Authorization: token ? `Bearer ${token}` : undefined,
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+            return response.data;
+        } catch (error) {
+            console.log('Error while uploading profile pic:', error.response?.data || error.message);
+            throw error;
         }
     },
 
@@ -596,6 +639,16 @@ export const CRUDAPI = {
             page += 1;
         }
         return all;
+    },
+
+    fetchFamilyById: async (id) => {
+        try {
+            const response = await apiClient.get(`/votebase/v1/api/family/${encodeURIComponent(id)}`);
+            return response.data;
+        } catch (error) {
+            console.log('Error while fetching family:', error.response?.data || error.message);
+            throw error;
+        }
     },
 
     createFamily: async (jsonReq) => {

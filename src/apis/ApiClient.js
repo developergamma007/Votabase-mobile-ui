@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 // Production: use your public API host (same as web). Raw IP works but stores prefer a stable domain.
 const PROD_BASE_URL = 'https://votabase.iswot.in';
 const DEV_HOST = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
-const DEV_BASE_URL = `http://${DEV_HOST}:8000`;
+const DEV_BASE_URL = `http://${DEV_HOST}:8002`;
 const BASE_URL = __DEV__ ? DEV_BASE_URL : PROD_BASE_URL;
 console.log(`[API_BASE] ${BASE_URL} platform=${Platform.OS} __DEV__=${__DEV__}`);
 

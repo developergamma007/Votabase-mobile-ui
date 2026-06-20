@@ -3,10 +3,12 @@ import { useFocusEffect } from "@react-navigation/native";
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Share, Linking } from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { WebView } from "react-native-webview";
-import DropDownPicker from "react-native-dropdown-picker";
-import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
+import { AppDropdown } from "../../components/AppDropdown";
+import { CRUDAPI, getAssemblyCode, persistAssemblyCode } from "../../apis/Api";
 import { AuthContext } from "../../context/AuthContext";
 import { buildFamilyMapTooltipText, canViewFamilyAnalysis } from "../../components/FamilyFormHelpers";
+import { premiumStyles } from '../../constants/premiumStyles';
+import { isAdminIswotUser } from "../../components/FeatureComingSoon";
 import {
   buildFamilyPointsOsmWebViewHtml,
   buildVolunteerPointsOsmWebViewHtml,
@@ -19,6 +21,7 @@ export default function VolunteerAnalysis() {
   const hideFamilyLabelsOnMap = ["WARD", "BOOTH", "USER"].includes(role);
   const isBoothRole = role === "BOOTH";
   const canUseFamilyAnalysis = canViewFamilyAnalysis(userInfo);
+  const canSwitchAssembly = isAdminIswotUser(userInfo);
 
   const [rows, setRows] = useState([]);
   const [fields, setFields] = useState([]);
@@ -29,7 +32,7 @@ export default function VolunteerAnalysis() {
   const [selectedWard, setSelectedWard] = useState('');
   const [assemblyCode, setAssemblyCode] = useState('');
   const [assemblyItems, setAssemblyItems] = useState<{ label: string; value: string }[]>([]);
-  const [openAssembly, setOpenAssembly] = useState(false);
+  const [contextReady, setContextReady] = useState(false);
   const [sortMode, setSortMode] = useState('name-asc');
   const [activeTab, setActiveTab] = useState("table");
   const [mapDataMode, setMapDataMode] = useState("volunteers");
@@ -46,7 +49,7 @@ export default function VolunteerAnalysis() {
   useEffect(() => {
     const init = async () => {
       let code = String(await getAssemblyCode() || '').trim();
-      if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
+      if (canSwitchAssembly) {
         try {
           const dropdownResp = await CRUDAPI.getAssemblyDropdown();
           const payload = dropdownResp?.data?.result || dropdownResp?.result || dropdownResp?.data || [];
@@ -66,10 +69,12 @@ export default function VolunteerAnalysis() {
         }
       }
       setAssemblyCode(code);
+      if (code) await persistAssemblyCode(code);
+      setContextReady(true);
       if (code) await loadWards(code);
     };
     init();
-  }, [role]);
+  }, [canSwitchAssembly]);
 
   useEffect(() => {
     if (!assemblyCode) return;
@@ -109,9 +114,10 @@ export default function VolunteerAnalysis() {
 
   useEffect(() => {
     if (isBoothRole) return;
+    if (!contextReady) return;
     if (tableDataMode === "families" && !canUseFamilyAnalysis) return;
     loadAnalysis();
-  }, [viewMode, selectedWard, assemblyCode, isBoothRole, tableDataMode, canUseFamilyAnalysis]);
+  }, [viewMode, selectedWard, assemblyCode, isBoothRole, tableDataMode, canUseFamilyAnalysis, contextReady]);
 
   const loadMapPoints = async () => {
     setMapLoading(true);
@@ -154,9 +160,10 @@ export default function VolunteerAnalysis() {
 
   useEffect(() => {
     if (activeTab !== "map") return;
+    if (!contextReady) return;
     if (mapDataMode === "families" && !canUseFamilyAnalysis) return;
     loadMapPoints();
-  }, [activeTab, mapDataMode, selectedWard, assemblyCode, canUseFamilyAnalysis]);
+  }, [activeTab, mapDataMode, selectedWard, assemblyCode, canUseFamilyAnalysis, contextReady]);
 
   useEffect(() => {
     if (canUseFamilyAnalysis) return;
@@ -166,14 +173,31 @@ export default function VolunteerAnalysis() {
 
   useFocusEffect(
     useCallback(() => {
-      if (isBoothRole) return undefined;
-      if (activeTab === "table") {
-        loadAnalysis();
-      } else {
-        loadMapPoints();
-      }
-      return undefined;
-    }, [activeTab, selectedWard, assemblyCode, mapDataMode, tableDataMode, isBoothRole, viewMode]),
+      if (isBoothRole || !contextReady) return undefined;
+      let cancelled = false;
+      const refresh = async () => {
+        // Pick up the assembly context selected on other screens (voter info,
+        // family, etc.) so analysis always shows that assembly's fresh data.
+        const stored = String(await getAssemblyCode() || '').trim();
+        if (cancelled) return;
+        const storedIsSelectable = stored
+          && (!assemblyItems.length || assemblyItems.some((item) => item.value === stored));
+        if (storedIsSelectable && stored !== assemblyCode) {
+          // State change triggers the load effects with the new assembly.
+          setAssemblyCode(stored);
+          return;
+        }
+        if (activeTab === "table") {
+          loadAnalysis();
+        } else {
+          loadMapPoints();
+        }
+      };
+      refresh();
+      return () => {
+        cancelled = true;
+      };
+    }, [activeTab, selectedWard, assemblyCode, assemblyItems, mapDataMode, tableDataMode, isBoothRole, viewMode, contextReady]),
   );
 
   const loadDetails = async () => {
@@ -381,37 +405,36 @@ export default function VolunteerAnalysis() {
   }
 
   return (
-    <View className="flex-1 bg-white">
+    <View className="flex-1 bg-slate-100">
       <ScrollView className="p-4">
         <Text className="text-xl font-bold text-gray-800 mb-1">Volunteer Analysis</Text>
         <Text className="text-gray-500 text-xs mb-4">Data collection coverage across different dimensions.</Text>
 
-        {(role === 'SUPER_ADMIN' || role === 'ADMIN') && assemblyItems.length > 0 ? (
+        {canSwitchAssembly && assemblyItems.length > 0 ? (
           <View className="mb-4 z-50">
             <Text className="text-gray-700 font-semibold mb-2">Assembly</Text>
-            <DropDownPicker
-              open={openAssembly}
+            <AppDropdown
               value={assemblyCode}
               items={assemblyItems}
-              setOpen={setOpenAssembly}
-              setValue={setAssemblyCode}
-              setItems={setAssemblyItems}
-              style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
-              dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
-              textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
-              placeholderStyle={{ color: '#94A3B8' }}
+              onChange={(next) => {
+                persistAssemblyCode(next);
+                setAssemblyCode(next);
+              }}
             />
           </View>
         ) : null}
 
-        <View className="mb-4 flex-row gap-2">
+        <View style={premiumStyles.tabStrip}>
           {["table", "map"].map((tab) => (
             <TouchableOpacity
               key={tab}
+              activeOpacity={0.85}
               onPress={() => setActiveTab(tab)}
-              className={`flex-1 py-2 rounded-xl border ${activeTab === tab ? "bg-blue-600 border-blue-600" : "bg-white border-gray-200"}`}
+              style={[premiumStyles.tabBtn, activeTab === tab && premiumStyles.tabBtnActive]}
             >
-              <Text className={`text-center font-semibold ${activeTab === tab ? "text-white" : "text-gray-700"}`}>{tab === "table" ? "Table" : "Map"}</Text>
+              <Text style={[premiumStyles.tabBtnText, activeTab === tab && premiumStyles.tabBtnTextActive]}>
+                {tab === "table" ? "TABLE" : "MAP"}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -522,7 +545,7 @@ export default function VolunteerAnalysis() {
             {error ? <Text className="text-red-600 text-center mb-4">{error}</Text> : null}
             {loading ? <ActivityIndicator size="large" color="#2563eb" /> : (
           <ScrollView horizontal className="mb-10">
-            <View className="border border-gray-100 rounded-xl overflow-hidden shadow-sm">
+            <View className="premium-card overflow-hidden p-0">
               {summaryTotals ? (
                 <View className="bg-blue-50 px-3 py-2 border-b border-blue-100">
                   <Text className="text-[11px] text-blue-900 font-medium">

@@ -1,13 +1,15 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
-import DropDownPicker from 'react-native-dropdown-picker';
+import { AppDropdown } from '../../components/AppDropdown';
 import { CRUDAPI, getAssemblyCode } from '../../apis/Api';
 import { AuthContext } from '../../context/AuthContext';
+import { isAdminIswotUser } from '../../components/FeatureComingSoon';
 
 export default function Promotions() {
   const { userInfo } = useContext(AuthContext) as any;
   const role = String(userInfo?.role || '').replace('ROLE_', '').toUpperCase();
   const isAdmin = role === 'SUPER_ADMIN' || role === 'ADMIN';
+  const canSwitchAssembly = isAdminIswotUser(userInfo);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -16,10 +18,6 @@ export default function Promotions() {
   const [assemblies, setAssemblies] = useState<any[]>([]);
   const [wards, setWards] = useState<any[]>([]);
   const [activatedWards, setActivatedWards] = useState<any[]>([]);
-
-  const [openAssembly, setOpenAssembly] = useState(false);
-  const [openWard, setOpenWard] = useState(false);
-  const [openChannel, setOpenChannel] = useState(false);
 
   const [assemblyId, setAssemblyId] = useState('');
   const [selectedWard, setSelectedWard] = useState<any>(null);
@@ -55,7 +53,7 @@ export default function Promotions() {
       setLoading(true);
       try {
         const code = await getAssemblyCode();
-        if (isAdmin) {
+        if (canSwitchAssembly) {
           const res = await CRUDAPI.fetchVolunteerDropdown('ASSEMBLY');
           const raw = Array.isArray(res) ? res : (res?.data?.result || res?.result || []);
           const formatted = raw.map((item: any) => ({
@@ -68,7 +66,7 @@ export default function Promotions() {
           setAssemblyId(initAsm);
         } else {
           setAssemblyId(String(code));
-          setAssemblyItems([{ label: String(code), value: String(code) }]);
+          setAssemblyItems([]);
         }
       } catch {
         const code = await getAssemblyCode();
@@ -79,7 +77,7 @@ export default function Promotions() {
       }
     };
     init();
-  }, [isAdmin]);
+  }, [canSwitchAssembly]);
 
   useEffect(() => {
     const loadWards = async () => {
@@ -176,21 +174,35 @@ export default function Promotions() {
           {feedback.error ? <Text className="text-red-600 text-[12px] mb-2">{feedback.error}</Text> : null}
           {feedback.success ? <Text className="text-green-700 text-[12px] mb-2">{feedback.success}</Text> : null}
 
-          <View className="z-30 mb-3">
-            <Text className="text-slate-600 mb-1 font-semibold text-[12px]">Select Assembly</Text>
-            <DropDownPicker open={openAssembly} value={assemblyId} items={assemblyItems} setOpen={setOpenAssembly} setValue={setAssemblyId} setItems={setAssemblyItems} style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }} dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }} textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }} placeholderStyle={{ color: '#94A3B8' }} />
-          </View>
+          {canSwitchAssembly ? (
+            <View className="z-30 mb-3">
+              <Text className="text-slate-600 mb-1 font-semibold text-[12px]">Select Assembly</Text>
+              <AppDropdown
+                value={assemblyId}
+                items={assemblyItems}
+                onChange={setAssemblyId}
+              />
+            </View>
+          ) : null}
           <View className="z-20 mb-3">
             <Text className="text-slate-600 mb-1 font-semibold text-[12px]">Select Ward</Text>
-            <DropDownPicker open={openWard} value={selectedWard?.value || null} items={wardItems} setOpen={setOpenWard} setValue={(cb: any) => {
-              const val = typeof cb === 'function' ? cb(selectedWard?.value || null) : cb;
-              const ward = wards.find((w: any) => w.value === val) || null;
-              setSelectedWard(ward);
-            }} setItems={setWardItems} placeholder="Select Ward" style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }} dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }} textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }} placeholderStyle={{ color: '#94A3B8' }} />
+            <AppDropdown
+              value={selectedWard?.value || null}
+              items={wardItems}
+              onChange={(val) => {
+                const ward = wards.find((w: any) => w.value === val) || null;
+                setSelectedWard(ward);
+              }}
+              placeholder="Select Ward"
+            />
           </View>
           <View className="z-10 mb-4">
             <Text className="text-slate-600 mb-1 font-semibold text-[12px]">Channel</Text>
-            <DropDownPicker open={openChannel} value={channel} items={channelItems} setOpen={setOpenChannel} setValue={setChannel} setItems={setChannelItems} style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }} dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }} textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }} placeholderStyle={{ color: '#94A3B8' }} />
+            <AppDropdown
+              value={channel}
+              items={channelItems}
+              onChange={setChannel}
+            />
           </View>
 
           {isAdmin && !selectedWard ? (

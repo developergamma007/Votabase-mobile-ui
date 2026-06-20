@@ -11,10 +11,11 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import DropDownPicker from "react-native-dropdown-picker";
+import { AppDropdown } from "../../components/AppDropdown";
 import { AuthContext } from "../../context/AuthContext";
 import { CRUDAPI, getAssemblyCode } from "../../apis/Api";
 import { isProtectedVolunteerLogin } from "../../helpers/volunteerLoginHelpers";
+import { premium } from "../../constants/premiumTheme";
 
 export default function AddVolunteer() {
     const navigation = useNavigation();
@@ -38,8 +39,6 @@ export default function AddVolunteer() {
     const [editPhone, setEditPhone] = useState('');
 
     // Dropdown visibility and search states
-    const [openLevel, setOpenLevel] = useState(false);
-    const [openAsm, setOpenAsm] = useState(false);
     const [openWard, setOpenWard] = useState(false);
     const [openBooth, setOpenBooth] = useState(false);
     const [searchWard, setSearchWard] = useState('');
@@ -518,16 +517,11 @@ export default function AddVolunteer() {
                                 <Text style={styles.labelHint}> (You can assign Booth volunteers only)</Text>
                             ) : null}
                         </Text>
-                        <DropDownPicker
-                            open={openLevel}
+                        <AppDropdown
                             value={form.workingLevel}
                             items={levelOptions}
-                            setOpen={setOpenLevel}
-                            setValue={v => handleChange('workingLevel', v(form.workingLevel))}
+                            onChange={(val) => handleChange('workingLevel', val)}
                             style={styles.dropdown}
-                            dropDownContainerStyle={styles.dropdownPanel}
-                            listMode="SCROLLVIEW"
-                            zIndex={4000}
                             disabled={creatorRole === 'WARD' && levelOptions.length === 1}
                         />
                     </View>
@@ -545,17 +539,12 @@ export default function AddVolunteer() {
                                 editable={false}
                             />
                         ) : (
-                            <DropDownPicker
-                                open={openAsm}
+                            <AppDropdown
                                 value={form.assemblyId}
                                 items={assemblies}
-                                setOpen={setOpenAsm}
-                                setValue={v => handleChange('assemblyId', v(form.assemblyId))}
+                                onChange={(val) => handleChange('assemblyId', val)}
                                 placeholder="Select Assembly"
                                 style={styles.dropdown}
-                                dropDownContainerStyle={styles.dropdownPanel}
-                                listMode="SCROLLVIEW"
-                                zIndex={3000}
                             />
                         )}
                     </View>
@@ -690,14 +679,12 @@ const styles = StyleSheet.create({
         padding: 16,
     },
     card: {
-        backgroundColor: "#fff",
-        borderRadius: 20,
-        padding: 20,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        elevation: 3,
+        backgroundColor: premium.bgCard,
+        borderRadius: premium.radius.xl,
+        padding: 22,
+        borderWidth: 1,
+        borderColor: premium.border,
+        ...premium.shadow.card,
     },
     row: {
         flexDirection: "row",
@@ -744,14 +731,16 @@ const styles = StyleSheet.create({
         fontWeight: "600",
     },
     input: {
-        backgroundColor: "#F8FAFC",
+        backgroundColor: premium.bgCard,
         borderWidth: 1,
-        borderColor: "#E2E8F0",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        height: 48,
+        borderColor: premium.border,
+        borderRadius: premium.radius.md,
+        paddingHorizontal: 16,
+        height: 52,
         fontSize: 15,
-        color: "#1E293B",
+        fontWeight: "600",
+        color: premium.text,
+        ...premium.shadow.soft,
     },
     disabledInput: {
         backgroundColor: "#F1F5F9",
@@ -759,15 +748,16 @@ const styles = StyleSheet.create({
         opacity: 0.6,
     },
     dropdown: {
-        backgroundColor: "#F8FAFC",
+        backgroundColor: premium.bgCard,
         borderWidth: 1,
-        borderColor: "#E2E8F0",
-        borderRadius: 12,
-        height: 48,
+        borderColor: premium.border,
+        borderRadius: premium.radius.md,
+        height: 52,
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: 12,
+        paddingHorizontal: 16,
         justifyContent: "space-between",
+        ...premium.shadow.soft,
     },
     dropdownValue: {
         fontSize: 15,
@@ -779,17 +769,13 @@ const styles = StyleSheet.create({
     },
     customPanel: {
         marginTop: 4,
-        backgroundColor: "#fff",
-        borderRadius: 12,
+        backgroundColor: premium.bgCard,
+        borderRadius: premium.radius.md,
         borderWidth: 1,
-        borderColor: "#E2E8F0",
+        borderColor: premium.border,
         maxHeight: 300,
         overflow: "hidden",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 5,
+        ...premium.shadow.card,
     },
     panelScroll: {
         maxHeight: 240,

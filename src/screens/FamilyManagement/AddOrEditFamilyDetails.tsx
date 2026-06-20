@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import FamilyLocationCapture, { FamilyLocationValue } from "../../components/FamilyLocationCapture";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import DropDownPicker from "react-native-dropdown-picker";
+import { AppDropdown } from "../../components/AppDropdown";
 import { bgColors } from "../../constants/colors";
 import { CRUDAPI } from "../../apis/Api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -40,9 +40,6 @@ export default function AddFamilyDetails() {
         const [searchQuery, setSearchQuery] = useState("");
         const [searchError, setSearchError] = useState("");
         // Dropdown states
-        const [openAssociation, setOpenAssociation] = useState(false);
-        const [openFamilyNature, setOpenFamilyNature] = useState(false);
-        const [openEconomicStatus, setOpenEconomicStatus] = useState(false);
         const [associationsData, setAssociationsData] = useState<any>(null);
         const [associationItems, setAssociationItems] = useState<any[]>([]);
         const [votersInSelectedBooth, setVotersInSelectedBooth] = useState<any[]>([]);
@@ -194,7 +191,7 @@ export default function AddFamilyDetails() {
         };
 
         return (
-            <View className={`${bgColors.white} border border-slate-200 p-4 rounded-2xl shadow-sm mt-6`}>
+            <View className="premium-section mt-6">
                 <Text className="text-[18px] font-semibold text-slate-800 mb-3">
                     New Family
                 </Text>
@@ -328,77 +325,33 @@ export default function AddFamilyDetails() {
                     {/* Economic Status */}
                     <View className="mb-5" >
                         <Text className="text-[14px] text-slate-600 mb-1">Economic Status</Text>
-                        <DropDownPicker
-                            open={openEconomicStatus}
+                        <AppDropdown
                             value={economicStatus}
                             items={economicStatusItems}
-                            setOpen={setOpenEconomicStatus}
-                            setValue={setEconomicStatus}
+                            onChange={setEconomicStatus}
                             placeholder="Select Economic status"
-                            onOpen={() => {
-                                setOpenAssociation(false);
-                                setOpenFamilyNature(false);
-                            }}
-                            style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
-                            dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
-                            listMode="SCROLLVIEW"
-                            scrollViewProps={{
-                                nestedScrollEnabled: true,
-                            }}
-                            placeholderStyle={{ color: '#94A3B8' }}
-                            textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
                         />
                     </View>
 
                     {/* Family Nature */}
                     <View className="mb-5">
                         <Text className="text-[14px] text-slate-600 mb-1">Family Nature</Text>
-                        <DropDownPicker
-                            open={openFamilyNature}
+                        <AppDropdown
                             value={familyNature}
                             items={familyNatureItems}
+                            onChange={setFamilyNature}
                             placeholder="Select Family nature"
-                            setOpen={setOpenFamilyNature}
-                            setValue={setFamilyNature}
-                            onOpen={() => {
-                                setOpenAssociation(false);
-                                setOpenEconomicStatus(false);
-                            }}
-                            style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
-                            dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
-                            listMode="SCROLLVIEW"
-                            scrollViewProps={{
-                                nestedScrollEnabled: true,
-                            }}
-                            placeholderStyle={{ color: '#94A3B8' }}
-                            textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
-                            zIndex={1000}
                         />
                     </View>
 
                     {/* Association */}
                     <View className="mb-5">
                         <Text className="text-[14px] text-slate-600 mb-1">Association (Optional)</Text>
-                        <DropDownPicker
-                            open={openAssociation}
+                        <AppDropdown
                             value={associationId}
                             items={associationItems}
-                            setOpen={setOpenAssociation}
-                            setValue={setAssociationId}
+                            onChange={setAssociationId}
                             placeholder="Select Association"
-                            onOpen={() => {
-                                setOpenFamilyNature(false);
-                                setOpenEconomicStatus(false);
-                            }}
-                            style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
-                            dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
-                            placeholderStyle={{ color: '#94A3B8' }}
-                            textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
-                            listMode="SCROLLVIEW"
-                            scrollViewProps={{
-                                nestedScrollEnabled: true,
-                            }}
-                            zIndex={500}
                         />
                     </View>
                     <FamilyLocationCapture

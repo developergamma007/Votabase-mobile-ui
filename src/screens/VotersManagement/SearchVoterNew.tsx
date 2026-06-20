@@ -13,14 +13,62 @@ import {
     Platform,
     Alert,
 } from "react-native";
-import DropDownPicker from "react-native-dropdown-picker";
+import { AppDropdown } from "../../components/AppDropdown";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { CRUDAPI, ensureUserProfileReady, getAssemblyCode, parseVoterSearchResponse } from "../../apis/Api";
 import { premium } from "../../constants/premiumTheme";
 import { PrinterHelper } from "../../components/PrinterHelper";
 import { openVoterInfoWithQuickLocation } from "../../helpers/voterLocationNavigation";
+import { getBoothCardTitle } from "../../helpers/boothDisplay";
+import AssemblyContextBar from '../../components/AssemblyContextBar';
 
 const PAGE_SIZE = 50;
+const VISITED_VOTER_STORAGE_PREFIX = "voterVisited:";
+
+const PRIVACY_FIELD_KEYS = [
+    "dob",
+    "caste",
+    "community",
+    "civicIssue",
+    "natureOfVoter",
+    "motherTongue",
+    "education",
+    "residenceType",
+    "ownership",
+    "voterPoints",
+    "govtSchemeTracking",
+    "engagementPotential",
+    "ifShifted",
+    "status",
+    "notes",
+];
+
+const getVoterEpicKey = (voter: any) =>
+    String(voter?.epicNo || voter?.epic || voter?.voterId || "").trim();
+
+const hasSavedPrivateSurveyData = (voter: any) =>
+    PRIVACY_FIELD_KEYS.some((key) => {
+        const value = voter?.[key];
+        if (Array.isArray(value)) return value.length > 0;
+        return String(value ?? "").trim().length > 0;
+    });
+
+const voterWasMetByVolunteer = (voter: any) => {
+    if (!voter) return false;
+    if (voter.volunteerMet) return true;
+    const fields = voter.updatedFields;
+    if (Array.isArray(fields) && fields.length > 0) return true;
+    if (typeof fields === "string" && fields.trim()) {
+        try {
+            const parsed = JSON.parse(fields);
+            if (Array.isArray(parsed)) return parsed.length > 0;
+        } catch {
+            return true;
+        }
+        return true;
+    }
+    return Boolean(voter.updatedByName || voter.updatedByPhone || hasSavedPrivateSurveyData(voter));
+};
 
 export default function SearchVoter() {
     const navigation = useNavigation();
@@ -42,9 +90,7 @@ export default function SearchVoter() {
         assemblyCode: "",
     });
 
-    const [openWard, setOpenWard] = useState(false);
     const [wardItems, setWardItems] = useState<any[]>([]);
-    const [openAssembly, setOpenAssembly] = useState(false);
     const [assemblyItems, setAssemblyItems] = useState<any[]>([]);
 
     const [searching, setSearching] = useState(false);
@@ -58,6 +104,7 @@ export default function SearchVoter() {
     const [localSearch, setLocalSearch] = useState("");
     const [boothMap, setBoothMap] = useState<Record<string, string>>({});
     const [sessionReady, setSessionReady] = useState(false);
+    const [visitedEpicKeys, setVisitedEpicKeys] = useState<Set<string>>(new Set());
 
     /* -------------------- INIT -------------------- */
     useEffect(() => {
@@ -132,6 +179,26 @@ export default function SearchVoter() {
             setView('list');
         }
     }, [booth, filteredVotersByParameter, searchMeta]);
+
+    useEffect(() => {
+        const loadVisitedEpicKeys = async () => {
+            try {
+                const keys = await AsyncStorage.getAllKeys();
+                setVisitedEpicKeys(new Set(
+                    keys
+                        .filter((key) => key.startsWith(VISITED_VOTER_STORAGE_PREFIX))
+                        .map((key) => key.slice(VISITED_VOTER_STORAGE_PREFIX.length))
+                        .filter(Boolean),
+                ));
+            } catch {
+                setVisitedEpicKeys(new Set());
+            }
+        };
+
+        loadVisitedEpicKeys();
+        const unsubscribe = navigation.addListener("focus", loadVisitedEpicKeys);
+        return unsubscribe;
+    }, [navigation]);
 
     /* -------------------- HANDLERS -------------------- */
     const handleChange = (key: string, value: any) => {
@@ -231,15 +298,29 @@ export default function SearchVoter() {
         const mCount = voters.filter((v: any) => (v.gender || v.sex || "").startsWith("M")).length;
         const fCount = voters.filter((v: any) => (v.gender || v.sex || "").startsWith("F")).length;
 
+        const headerTitle = getBoothCardTitle(
+            booth || { boothId: searchMeta?.boothId, boothNameEn: searchMeta?.boothName },
+        );
+
         return (
             <View style={styles.boothHeaderCard}>
-                <Text style={styles.boothHeaderText}>
-                    {booth?.boothId || searchMeta?.boothId || ""} - {booth?.boothNameEn || searchMeta?.boothName || ""}
-                </Text>
+                <Text style={styles.boothHeaderText}>{headerTitle}</Text>
                 <View style={styles.boothStatsRow}>
-                    <Text style={styles.statLabel}>VOTERS: <Text style={styles.statValue}>{voters.length || searchMeta?.total || 0}</Text></Text>
-                    <Text style={styles.statLabel}>MALE: <Text style={styles.statValue}>{mCount || searchMeta?.male || 0}</Text></Text>
-                    <Text style={styles.statLabel}>FEMALE: <Text style={styles.statValue}>{fCount || searchMeta?.female || 0}</Text></Text>
+                    <View style={[styles.statPill, styles.statPillTotal]}>
+                        <Text style={styles.statPillTotalText}>
+                            Total Voters: <Text style={styles.pillValue}>{voters.length || searchMeta?.total || 0}</Text>
+                        </Text>
+                    </View>
+                    <View style={[styles.statPill, styles.statPillMale]}>
+                        <Text style={styles.statPillMaleText}>
+                            Male: <Text style={styles.pillValue}>{mCount || searchMeta?.male || 0}</Text>
+                        </Text>
+                    </View>
+                    <View style={[styles.statPill, styles.statPillFemale]}>
+                        <Text style={styles.statPillFemaleText}>
+                            Female: <Text style={styles.pillValue}>{fCount || searchMeta?.female || 0}</Text>
+                        </Text>
+                    </View>
                 </View>
             </View>
         );
@@ -249,6 +330,7 @@ export default function SearchVoter() {
     const renderVoterCard = ({ item, index }: { item: any, index: number }) => {
         const gender = (item.gender || item.sex || "-").toUpperCase();
         const isFemale = gender.startsWith("F");
+        const showVisitedBadge = voterWasMetByVolunteer(item) || visitedEpicKeys.has(getVoterEpicKey(item));
 
         // Gender-based premium colors
         const primaryColor = isFemale ? "#D946EF" : "#3B82F6";
@@ -289,6 +371,12 @@ export default function SearchVoter() {
                         <Text style={styles.indexText}>{index + 1}</Text>
                         <Text style={styles.epicIdText}>{item.epicNo || item.epic || "-"}</Text>
                         <View style={{ flex: 1 }} />
+                        {showVisitedBadge ? (
+                            <View style={styles.visitedMiniBadge}>
+                                <Ionicons name="checkmark-circle" size={12} color="#059669" />
+                                <Text style={styles.visitedMiniBadgeText}>VISITED</Text>
+                            </View>
+                        ) : null}
                         <View style={[styles.genderBadge, isFemale ? styles.femaleBadge : styles.maleBadge]}>
                             <Text style={[styles.genderBadgeText, isFemale ? styles.femaleBadgeText : styles.maleBadgeText]}>
                                 {gender}
@@ -329,26 +417,46 @@ export default function SearchVoter() {
 
     return (
         <View style={styles.container}>
-            {/* Context Section - Always Visible */}
-            <View style={styles.contextWrap}>
-                <View style={styles.contextRow}>
-                    <Text style={styles.contextLabel}>CONTEXT</Text>
-                    <View style={styles.dropdownContainer}>
-                        <DropDownPicker
-                            open={openAssembly}
-                            value={form.assemblyCode}
-                            items={assemblyItems}
-                            setOpen={setOpenAssembly}
-                            setValue={(val) => handleChange("assemblyCode", val(form.assemblyCode))}
-                            placeholder="Select Assembly"
-                            style={styles.contextDropdown}
-                            dropDownContainerStyle={styles.contextDropdownPanel}
-                            textStyle={styles.dropdownText}
-                            placeholderStyle={styles.dropdownPlaceholder}
-                        />
-                    </View>
-                </View>
-            </View>
+            <AssemblyContextBar
+                selectedAsm={form.assemblyCode}
+                setSelectedAsm={(val) => handleChange("assemblyCode", val as string)}
+                asmItems={assemblyItems}
+                onSelectItem={async (item) => {
+                    handleChange("assemblyCode", item.value);
+                    try {
+                        const response = await CRUDAPI.loadDataLite(item.value);
+                        const snapshotResult = response?.data?.result;
+                        if (!snapshotResult) return;
+                        let finalData;
+                        if (typeof snapshotResult === 'string') {
+                            const resp = await fetch(snapshotResult);
+                            finalData = await resp.json();
+                        } else {
+                            finalData = snapshotResult;
+                        }
+                        await AsyncStorage.setItem(BOOTH_CACHE_KEY, JSON.stringify(finalData));
+                        const wards = finalData?.assembly?.wards || [];
+                        setWardItems(
+                            wards.map((w: any) => ({
+                                label: w.wardNameEn || `Ward ${w.wardId}`,
+                                value: w.wardId,
+                            }))
+                        );
+                        const bMapping: Record<string, string> = {};
+                        wards.forEach((w: any) => {
+                            (w.booths || []).forEach((b: any) => {
+                                const bId = b.boothId || b.id || b.boothNo;
+                                if (bId) {
+                                    bMapping[String(bId)] = b.boothNameEn || b.boothLabel || b.pollingStationAdrEn || "";
+                                }
+                            });
+                        });
+                        setBoothMap(bMapping);
+                    } catch (err) {
+                        console.log("Failed to reload assembly snapshot", err);
+                    }
+                }}
+            />
 
             {view === 'search' ? (
                 <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
@@ -367,18 +475,11 @@ export default function SearchVoter() {
                         {showMoreFilters && (
                             <View style={styles.moreFilters}>
                                 <View style={{ zIndex: 1000, marginBottom: 12 }}>
-                                    <DropDownPicker
-                                        open={openWard}
+                                    <AppDropdown
                                         value={form.wards}
                                         items={wardItems}
-                                        setOpen={setOpenWard}
-                                        setValue={(val) => handleChange("wards", val(form.wards))}
+                                        onChange={(val) => handleChange("wards", val)}
                                         placeholder="Select Ward"
-                                        style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
-                                        dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
-                                        textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
-                                        placeholderStyle={{ color: '#94A3B8' }}
-                                        listMode="SCROLLVIEW"
                                     />
                                 </View>
                                 <TextInput
@@ -448,13 +549,19 @@ export default function SearchVoter() {
                                 <View style={styles.statsInfo}>
                                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsRow}>
                                         <View style={[styles.pill, styles.pillTotal]}>
-                                            <Text style={styles.pillLabel}>Total Voters: <Text style={styles.pillValue}>{resultMeta?.total || 0}</Text></Text>
+                                            <Text style={styles.pillTotalText}>
+                                                Total Voters: <Text style={styles.pillValue}>{resultMeta?.total || 0}</Text>
+                                            </Text>
                                         </View>
                                         <View style={[styles.pill, styles.pillMale]}>
-                                            <Text style={styles.pillLabel}>Male: <Text style={styles.pillValue}>{resultMeta?.male || 0}</Text></Text>
+                                            <Text style={styles.pillMaleText}>
+                                                Male: <Text style={styles.pillValue}>{resultMeta?.male || 0}</Text>
+                                            </Text>
                                         </View>
                                         <View style={[styles.pill, styles.pillFemale]}>
-                                            <Text style={styles.pillLabel}>Female: <Text style={styles.pillValue}>{resultMeta?.female || 0}</Text></Text>
+                                            <Text style={styles.pillFemaleText}>
+                                                Female: <Text style={styles.pillValue}>{resultMeta?.female || 0}</Text>
+                                            </Text>
                                         </View>
                                     </ScrollView>
                                 </View>
@@ -676,42 +783,52 @@ const styles = StyleSheet.create({
     },
     pill: {
         paddingHorizontal: 14,
-        paddingVertical: 6,
-        borderRadius: 14,
+        paddingVertical: 10,
+        borderRadius: 999,
         marginRight: 8,
-        borderWidth: 1.5,
+        borderWidth: 1,
     },
     pillTotal: {
-        backgroundColor: "#F0F9FF",
-        borderColor: "#BAE6FD",
+        backgroundColor: "#EEF2FF",
+        borderColor: "#C7D2FE",
     },
     pillMale: {
-        backgroundColor: "#F0FDF4",
-        borderColor: "#BBF7D0",
+        backgroundColor: "#E0F2FE",
+        borderColor: "#7DD3FC",
     },
     pillFemale: {
-        backgroundColor: "#FDF2F8",
-        borderColor: "#FBCFE8",
+        backgroundColor: "#FCE7F3",
+        borderColor: "#F9A8D4",
     },
-    pillLabel: {
-        fontSize: 11,
+    pillTotalText: {
+        fontSize: 12,
         fontWeight: "700",
-        color: "#475569",
+        color: "#3730A3",
+    },
+    pillMaleText: {
+        fontSize: 12,
+        fontWeight: "700",
+        color: "#075985",
+    },
+    pillFemaleText: {
+        fontSize: 12,
+        fontWeight: "700",
+        color: "#9D174D",
     },
     pillValue: {
-        fontWeight: "900",
-        color: "#0284C7",
+        fontWeight: "800",
     },
     subSearch: {
         flexDirection: "row",
         alignItems: "center",
-        backgroundColor: "#fff",
-        borderRadius: 10,
-        paddingHorizontal: 12,
-        height: 44,
+        backgroundColor: premium.bgCard,
+        borderRadius: premium.radius.lg,
+        paddingHorizontal: 16,
+        height: 52,
         marginTop: 15,
         borderWidth: 1,
-        borderColor: "#CBD5E1",
+        borderColor: premium.border,
+        ...premium.shadow.soft,
     },
     subSearchInput: {
         flex: 1,
@@ -724,18 +841,14 @@ const styles = StyleSheet.create({
         padding: 16,
     },
     premiumCard: {
-        backgroundColor: "#fff",
-        borderRadius: 16,
+        backgroundColor: premium.bgCard,
+        borderRadius: premium.radius.lg,
         marginBottom: 14,
         overflow: "hidden",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.06,
-        shadowRadius: 10,
-        elevation: 3,
         borderWidth: 1,
-        borderColor: "#F1F5F9",
+        borderColor: premium.border,
         borderLeftWidth: 6,
+        ...premium.shadow.card,
     },
     metaRow: {
         flexDirection: "row",
@@ -804,6 +917,24 @@ const styles = StyleSheet.create({
         paddingHorizontal: 8,
         paddingVertical: 2,
         borderRadius: 6,
+    },
+    visitedMiniBadge: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "#ECFDF5",
+        borderColor: "#A7F3D0",
+        borderWidth: 1,
+        borderRadius: 999,
+        paddingHorizontal: 7,
+        paddingVertical: 3,
+        marginRight: 6,
+    },
+    visitedMiniBadgeText: {
+        marginLeft: 3,
+        color: "#047857",
+        fontSize: 9,
+        fontWeight: "900",
+        letterSpacing: 0.3,
     },
     femaleBadge: {
         backgroundColor: "#FDF2F8",
@@ -929,16 +1060,42 @@ const styles = StyleSheet.create({
     },
     boothStatsRow: {
         flexDirection: "row",
+        flexWrap: "wrap",
         alignItems: "center",
+        gap: 8,
     },
-    statLabel: {
-        fontSize: 11,
-        fontWeight: "800",
-        color: "#64748B",
-        marginRight: 15,
+    statPill: {
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderRadius: 999,
+        borderWidth: 1,
     },
-    statValue: {
-        color: "#0F172A",
-        fontWeight: "900",
-    }
+    statPillTotal: {
+        backgroundColor: "#EEF2FF",
+        borderColor: "#C7D2FE",
+    },
+    statPillTotalText: {
+        fontSize: 12,
+        fontWeight: "700",
+        color: "#3730A3",
+    },
+    statPillMale: {
+        backgroundColor: "#E0F2FE",
+        borderColor: "#7DD3FC",
+    },
+    statPillMaleText: {
+        fontSize: 12,
+        fontWeight: "700",
+        color: "#075985",
+    },
+    statPillFemale: {
+        backgroundColor: "#FCE7F3",
+        borderColor: "#F9A8D4",
+    },
+    statPillFemaleText: {
+        fontSize: 12,
+        fontWeight: "700",
+        color: "#9D174D",
+    },
+    pillValue: { fontWeight: "800" }
 });

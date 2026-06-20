@@ -3,11 +3,12 @@ import { View, TextInput, TouchableOpacity, Text, FlatList, ActivityIndicator, S
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import DropDownPicker from 'react-native-dropdown-picker';
-import { ScrollView } from 'react-native-gesture-handler';
+import { AppDropdown } from '../../components/AppDropdown';
 import LinearGradient from 'react-native-linear-gradient';
-import { bgColors } from '../../constants/colors';
 import { CRUDAPI, ensureUserProfileReady, getAssemblyCode } from '../../apis/Api';
+import { getBoothCardTitle, resolveBoothDisplayNo } from '../../helpers/boothDisplay';
+import { premium } from '../../constants/premiumTheme';
+import AssemblyContextBar from '../../components/AssemblyContextBar';
 
 export default function SearchBooth() {
   const navigation = useNavigation();
@@ -19,11 +20,8 @@ export default function SearchBooth() {
   const [loadError, setLoadError] = useState('');
   const [loadingBoothId, setLoadingBoothId] = useState<any>(null);
 
-  const [openAsm, setOpenAsm] = useState(false);
   const [asmItems, setAsmItems] = useState([]);
   const [selectedAsm, setSelectedAsm] = useState('');
-
-  const [openWard, setOpenWard] = useState(false);
   const [wardItems, setWardItems] = useState([{ label: 'ALL', value: 'ALL' }]);
   const [selectedWard, setSelectedWard] = useState('ALL');
 
@@ -127,15 +125,20 @@ export default function SearchBooth() {
     const asm = assemblyData?.assembly || assemblyData;
     const wards = asm?.wards || [];
     return wards.flatMap((ward: any) =>
-      (ward.booths || []).map((booth: any) => ({
-        ...booth,
-        boothId: booth.boothId ?? booth.id ?? booth.booth_no,
-        boothNameEn: booth.boothNameEn ?? booth.nameEn ?? booth.booth_add_en ?? '',
-        boothNameLocal: booth.boothNameLocal ?? booth.nameLocal ?? booth.booth_add_local ?? '',
-        voters: booth.voters || [],
-        wardId: ward.wardId ?? ward.id ?? ward.ward_id,
-        wardNameEn: ward.wardNameEn ?? ward.nameEn ?? ward.ward_name_en,
-      }))
+      (ward.booths || []).map((booth: any) => {
+        const boothId = booth.boothId ?? booth.id ?? booth.booth_id;
+        const boothNo = booth.boothNo ?? booth.booth_no ?? resolveBoothDisplayNo({ boothId });
+        return {
+          ...booth,
+          boothId,
+          boothNo,
+          boothNameEn: booth.boothNameEn ?? booth.nameEn ?? booth.booth_add_en ?? booth.pollingStationAdrEn ?? '',
+          boothNameLocal: booth.boothNameLocal ?? booth.nameLocal ?? booth.booth_add_local ?? '',
+          voters: booth.voters || [],
+          wardId: ward.wardId ?? ward.id ?? ward.ward_id,
+          wardNameEn: ward.wardNameEn ?? ward.nameEn ?? ward.ward_name_en,
+        };
+      })
     );
   }, [assemblyData]);
 
@@ -144,7 +147,7 @@ export default function SearchBooth() {
     if (selectedWard !== 'ALL' && String(item.wardId) !== selectedWard) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
-    const haystack = `${item.boothNameEn || ''} ${item.boothNameLocal || ''} ${item.boothId || ''}`.toLowerCase();
+    const haystack = `${item.boothNameEn || ''} ${item.boothNameLocal || ''} ${item.boothNo || ''} ${getBoothCardTitle(item)}`.toLowerCase();
     return haystack.includes(q);
   });
 
@@ -191,28 +194,12 @@ export default function SearchBooth() {
 
   return (
     <View style={styles.container}>
-      {/* Context - Persistent */}
-      <View style={styles.contextHeader}>
-        <View style={styles.contextRow}>
-          <Text style={styles.contextLabel}>CONTEXT</Text>
-          <View style={{ flex: 1 }}>
-              <DropDownPicker
-                open={openAsm}
-                value={selectedAsm}
-                items={asmItems}
-                setOpen={setOpenAsm}
-                setValue={setSelectedAsm}
-                onSelectItem={(item) => fetchSnapshotFromApi(item.value)}
-                placeholder="Select Assembly"
-                style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
-                dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12 }}
-                textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
-                placeholderStyle={{ color: '#94A3B8' }}
-                listMode="SCROLLVIEW"
-              />
-          </View>
-        </View>
-      </View>
+      <AssemblyContextBar
+        selectedAsm={selectedAsm}
+        setSelectedAsm={setSelectedAsm}
+        asmItems={asmItems}
+        onSelectItem={(item) => fetchSnapshotFromApi(item.value)}
+      />
 
       <FlatList
         data={filteredData}
@@ -233,35 +220,37 @@ export default function SearchBooth() {
               </View>
 
               <View style={{ marginTop: 12, zIndex: 1000 }}>
-                <DropDownPicker
-                  open={openWard}
+                <AppDropdown
                   value={selectedWard}
                   items={wardItems}
-                  setOpen={setOpenWard}
-                  setValue={setSelectedWard}
+                  onChange={setSelectedWard}
                   placeholder="Select Ward"
-                  style={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, minHeight: 46 }}
-                  dropDownContainerStyle={{ backgroundColor: '#ffffff', borderColor: '#CBD5E1', borderRadius: 12, zIndex: 5000 }}
-                  textStyle={{ fontSize: 14, color: '#1E293B', fontWeight: '600' }}
-                  placeholderStyle={{ color: '#94A3B8' }}
-                  listMode="SCROLLVIEW"
                 />
               </View>
             </View>
 
-            {/* Summary Grid */}
+            <View style={styles.summaryPillsRow}>
+              <View style={[styles.statPill, styles.statPillTotal]}>
+                <Text style={styles.statPillTotalText}>
+                  Total Voters: <Text style={styles.pillValue}>{summaryStats.totalVoters.toLocaleString()}</Text>
+                </Text>
+              </View>
+              <View style={[styles.statPill, styles.statPillMale]}>
+                <Text style={styles.statPillMaleText}>
+                  Male: <Text style={styles.pillValue}>{summaryStats.totalMale.toLocaleString()}</Text>
+                </Text>
+              </View>
+              <View style={[styles.statPill, styles.statPillFemale]}>
+                <Text style={styles.statPillFemaleText}>
+                  Female: <Text style={styles.pillValue}>{summaryStats.totalFemale.toLocaleString()}</Text>
+                </Text>
+              </View>
+            </View>
+
             <View style={styles.summaryGrid}>
               <View style={styles.summaryRow}>
-                {renderSummaryCard('Total Wards', summaryStats.totalWards, '#3B82F6')}
-                {renderSummaryCard('Total Booths', summaryStats.totalBooths, '#000')}
-              </View>
-              <View style={styles.summaryRow}>
-                {renderSummaryCard('Total Voters', summaryStats.totalVoters, '#000')}
-                {renderSummaryCard('Male Voters', summaryStats.totalMale, '#3B82F6')}
-              </View>
-              <View style={styles.summaryRow}>
-                {renderSummaryCard('Female Voters', summaryStats.totalFemale, '#D946EF')}
-                <View style={{ flex: 1 }} />
+                {renderSummaryCard('Total Wards', summaryStats.totalWards, '#3730A3')}
+                {renderSummaryCard('Total Booths', summaryStats.totalBooths, '#075985')}
               </View>
             </View>
           </View>
@@ -272,21 +261,33 @@ export default function SearchBooth() {
             <TouchableOpacity
               style={styles.boothCard}
               onPress={() => openBooth(booth)}
+              activeOpacity={0.9}
             >
-              <View style={styles.cardAccent} />
+              <LinearGradient
+                colors={['#06B6D4', '#2563EB']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={styles.cardAccent}
+              />
               <View style={styles.cardBody}>
                 <Text style={styles.boothTitle}>
-                  {booth.boothId} - {booth.boothNameEn || booth.boothNameLocal}
+                  {getBoothCardTitle(booth)}
                 </Text>
                 <View style={styles.statsRow}>
-                  <View style={[styles.statPill, { backgroundColor: '#EEF2FF' }]}>
-                    <Text style={styles.pillLabel}>Total Voters <Text style={styles.pillValue}>{stats.total}</Text></Text>
+                  <View style={[styles.statPill, styles.statPillTotal]}>
+                    <Text style={styles.statPillTotalText}>
+                      Total Voters: <Text style={styles.pillValue}>{stats.total}</Text>
+                    </Text>
                   </View>
-                  <View style={[styles.statPill, { backgroundColor: '#E0F2FE' }]}>
-                    <Text style={styles.pillLabel}>Male <Text style={styles.pillValue}>{stats.male}</Text></Text>
+                  <View style={[styles.statPill, styles.statPillMale]}>
+                    <Text style={styles.statPillMaleText}>
+                      Male: <Text style={styles.pillValue}>{stats.male}</Text>
+                    </Text>
                   </View>
-                  <View style={[styles.statPill, { backgroundColor: '#FDF2F8' }]}>
-                    <Text style={styles.pillLabel}>Female <Text style={styles.pillValue}>{stats.female}</Text></Text>
+                  <View style={[styles.statPill, styles.statPillFemale]}>
+                    <Text style={styles.statPillFemaleText}>
+                      Female: <Text style={styles.pillValue}>{stats.female}</Text>
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -304,16 +305,17 @@ export default function SearchBooth() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
-  contextHeader: { padding: 16, paddingBottom: 10, zIndex: 3000, backgroundColor: '#F8FAFC' },
+  container: { flex: 1, backgroundColor: premium.bg },
+  contextHeader: { padding: 16, paddingBottom: 10, zIndex: 3000, backgroundColor: premium.bg },
   contextRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 12,
+    backgroundColor: premium.bgCard,
+    padding: 14,
+    borderRadius: premium.radius.lg,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: premium.border,
+    ...premium.shadow.soft,
   },
   contextLabel: { fontSize: 12, fontWeight: '800', color: '#64748B', marginRight: 15 },
   dropdown: { borderColor: '#E2E8F0', borderRadius: 8, minHeight: 40 },
@@ -321,60 +323,100 @@ const styles = StyleSheet.create({
 
   listContent: { padding: 16, paddingTop: 0 },
   searchSection: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 16,
+    backgroundColor: premium.bgCard,
+    padding: 20,
+    borderRadius: premium.radius.xl,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: premium.border,
+    ...premium.shadow.card,
   },
   searchInputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: premium.radius.lg,
+    paddingHorizontal: 16,
+    height: 56,
+    borderWidth: 1,
+    borderColor: premium.border,
+    ...premium.shadow.soft,
   },
-  searchInput: { flex: 1, height: 45, color: '#1E293B', marginLeft: 8 },
+  searchInput: { flex: 1, height: 52, color: premium.text, marginLeft: 10, fontSize: 13, fontWeight: '500' },
 
+  summaryPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
   summaryGrid: { marginBottom: 16 },
   summaryRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   summaryCard: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: premium.bgCard,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: premium.radius.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: premium.border,
+    ...premium.shadow.soft,
   },
   summaryLabel: { fontSize: 10, fontWeight: '800', marginBottom: 4 },
   summaryValue: { fontSize: 20, fontWeight: 'bold', color: '#0F172A' },
 
   boothCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    marginBottom: 12,
+    backgroundColor: '#F8FBFF',
+    borderRadius: 22,
+    marginBottom: 14,
     flexDirection: 'row',
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: 'rgba(148, 163, 184, 0.35)',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 3,
   },
-  cardAccent: { width: 4, backgroundColor: '#0EA5E9' },
-  cardBody: { flex: 1, padding: 16 },
-  boothTitle: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 12 },
+  cardAccent: { width: 7 },
+  cardBody: { flex: 1, padding: 18 },
+  boothTitle: { fontSize: 15, fontWeight: '700', color: '#111827', lineHeight: 22, marginBottom: 14 },
   statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  statPill: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
-  pillLabel: { fontSize: 12, color: '#475569' },
-  pillValue: { fontWeight: 'bold', color: '#1E293B' },
+  statPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  statPillTotal: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
+  },
+  statPillTotalText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#3730A3',
+  },
+  statPillMale: {
+    backgroundColor: '#E0F2FE',
+    borderColor: '#7DD3FC',
+  },
+  statPillMaleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#075985',
+  },
+  statPillFemale: {
+    backgroundColor: '#FCE7F3',
+    borderColor: '#F9A8D4',
+  },
+  statPillFemaleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9D174D',
+  },
+  pillValue: { fontWeight: '800' },
 
   emptyContainer: { alignItems: 'center', marginTop: 40 },
   emptyText: { color: '#64748B', fontSize: 14 },

@@ -48,6 +48,7 @@ export const premiumInput = {
   paddingVertical: 14,
   fontSize: 15,
   color: premium.text,
+  ...premium.shadow.soft,
 };
 
 export const premiumLabel = {

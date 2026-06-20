@@ -1,10 +1,15 @@
 import React from "react";
 import { View, Text } from "react-native";
 
-export function isVotabaseSuperAdmin(userInfo: { role?: string; userName?: string } | null | undefined) {
+export function isAdminIswotUser(userInfo: { userName?: string; email?: string } | null | undefined) {
+  const userName = String(userInfo?.userName || "").trim().toLowerCase();
+  const email = String(userInfo?.email || "").trim().toLowerCase();
+  return userName === "admin@iswot.io" || email === "admin@iswot.io";
+}
+
+export function isVotabaseSuperAdmin(userInfo: { role?: string; userName?: string; email?: string } | null | undefined) {
   const role = String(userInfo?.role || "").replace("ROLE_", "").toUpperCase();
-  const userName = String(userInfo?.userName || "").toLowerCase();
-  return role === "SUPER_ADMIN" || userName.startsWith("admin@iswot");
+  return role === "SUPER_ADMIN" || isAdminIswotUser(userInfo);
 }
 
 export default function FeatureComingSoon() {

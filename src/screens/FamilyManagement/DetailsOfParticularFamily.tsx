@@ -15,7 +15,7 @@ export default function VoterFamilyDetails() {
             title: familyName,
             headerRight: () => (
                 <TouchableOpacity
-                    onPress={() => navigation.navigate("addFamilyDetails", { boothId: boothId, family: family })}
+                    onPress={() => navigation.navigate("boothForFamily", { editFamilyId: family?.familyId })}
                     style={{ marginLeft: 4 }}
                 >
                     <Ionicons name="pencil-outline" size={28} />
